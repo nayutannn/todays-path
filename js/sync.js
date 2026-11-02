@@ -13,6 +13,7 @@ const listeners = new Set();
 export const status = { state: 'loading', lastSync: null, error: '' };   // loading | signed-out | syncing | ok | error | offline
 export const onStatus = f => listeners.add(f);
 export const currentUser = () => user;
+export const client = () => sb;
 const setStatus = (s, extra = {}) => { Object.assign(status, { state: s, error: '' }, extra); listeners.forEach(f => f()); };
 
 // 最後にサーバーと一致していた内容（kind:id → JSON）。ここと違う項目だけを送る
@@ -33,6 +34,9 @@ function localRecords() {
   out.set('settings:meta', { checkDone: state.meta.checkDone || '' });
   return out;
 }
+// サーバー（jsonb）はキーの順番を並べ替えて返すため、比較はキーを整列した JSON で行う
+const canon = v => JSON.stringify(v, (_, x) => x && typeof x === 'object' && !Array.isArray(x)
+  ? Object.fromEntries(Object.keys(x).sort().map(k => [k, x[k]])) : x);
 const splitKey = key => { const i = key.indexOf(':'); return [key.slice(0, i), key.slice(i + 1)]; };
 
 function setLocal(kind, id, data) {
@@ -63,7 +67,7 @@ function applyRemote(rows) {
       if (key in snap.items) { delete snap.items[key]; removeLocal(r.kind, r.id); changed = true; }
       continue;
     }
-    const json = JSON.stringify(r.data);
+    const json = canon(r.data);
     if (snap.items[key] === json) continue;
     snap.items[key] = json;
     setLocal(r.kind, r.id, r.data);
@@ -82,7 +86,7 @@ async function push() {
   const now = new Date().toISOString();
   const rows = [];
   for (const [key, data] of local) {
-    if (snap.items[key] === JSON.stringify(data)) continue;
+    if (snap.items[key] === canon(data)) continue;
     const [kind, id] = splitKey(key);
     rows.push({ user_id: user.id, kind, id, data, deleted: false, updated_at: now });
   }
@@ -97,7 +101,7 @@ async function push() {
     if (error) throw error;
     for (const r of chunk) {
       const key = `${r.kind}:${r.id}`;
-      if (r.deleted) delete snap.items[key]; else snap.items[key] = JSON.stringify(r.data);
+      if (r.deleted) delete snap.items[key]; else snap.items[key] = canon(r.data);
     }
     storeSnap();
   }

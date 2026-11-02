@@ -1,6 +1,7 @@
 import * as U from './util.js';
 import * as S from './store.js';
 import * as Sync from './sync.js';
+import * as Push from './push.js';
 
 const { state } = S;
 const { esc, ymd, hm, parse, addDays, startOfDay } = U;
@@ -700,7 +701,8 @@ function renderSettings() {
     <section class="card">
       <h3>通知</h3>
       <p class="muted small">状態: ${{ granted: '許可済み', denied: '拒否（端末の設定から許可してください）', default: '未設定', unsupported: 'この環境では未対応（iPhoneはホーム画面に追加したアプリから許可）' }[perm]}</p>
-      ${perm === 'default' ? '<button data-act="notif-perm" class="primary">通知を許可する</button>' : ''}
+      ${perm === 'default' && !Push.pushSupported() ? '<button data-act="notif-perm" class="primary">通知を許可する</button>' : ''}
+      ${pushRow()}
       <p class="muted small">予定・todoごとの通知は各編集画面で何個でも追加できます。下は時刻を決めて鳴らす自由な通知です。</p>
       <ul class="alarms">${s.alarms.map(a => `
         <li data-id="${a.id}">
@@ -766,6 +768,16 @@ function renderSettings() {
   });
 }
 
+function pushRow() {
+  if (!Push.pushSupported()) return '';
+  if (Push.pushActive()) return `
+    <p class="small">この端末: <b>アプリを閉じていても通知が届きます</b></p>
+    <div class="actions"><button data-act="push-test">テスト通知（約1分後）</button><span class="sp"></span><button data-act="push-off">この端末で受け取らない</button></div>`;
+  return `
+    <p class="muted small">今はアプリを開いている間だけ通知します。閉じていても届くようにするには、ログインしてから下のボタンを押してください。</p>
+    <button data-act="push-on" class="primary">閉じていても通知を受け取る</button>`;
+}
+
 function syncCard() {
   const st = Sync.status;
   const u = Sync.currentUser();
@@ -794,6 +806,11 @@ function syncCard() {
 }
 
 /* ================= 通知・バッジ ================= */
+// プッシュ通知で増えたバッジの数（Service Worker が数えている）はアプリを開いたら 0 に戻す
+function clearPushBadge() {
+  caches.open('todays-path-meta').then(c => c.put('badge', new Response('0'))).then(updateBadge).catch(() => {});
+}
+
 function updateBadge() {
   const n = (state.meta.badge || 0) + state.inbox.length;
   if (!navigator.setAppBadge) return;
@@ -810,42 +827,17 @@ async function notify(title, body, tag, url = './#path') {
   } else toast(`${title}：${body}`);
 }
 
-function pathSummary(target) {
-  const p = S.buildPath(target);
-  const parts = [];
-  if (p.events.length) parts.push(`予定${p.events.length}件（${p.events.slice(0, 2).map(o => o.ev.title).join('、')}${p.events.length > 2 ? '…' : ''}）`);
-  if (p.dueSoon.length) parts.push(`期限間近${p.dueSoon.length}件`);
-  if (p.doToday.length) parts.push(`やる日${p.doToday.length}件`);
-  if (p.longTerm.length) parts.push(`長期${p.longTerm.length}件`);
-  return parts.join(' / ') || '予定もtodoもありません';
-}
-
-// アプリを開いている間の通知（アプリを閉じていても届く通知は次の段階でサーバーから送る）
+// アプリを開いている間の通知。この端末がプッシュ通知を受け取る設定なら、サーバーから届くのでここでは出さない
 function tick() {
   const now = new Date();
-  const today = startOfDay(now);
   const fired = state.meta.fired;
   let changed = false;
-  const once = (key, at, fn) => {
-    if (now >= at && now - at < 15 * 60000 && !fired[key]) { fired[key] = now.getTime(); changed = true; fn(); }
-  };
-  const at = time => { const [h, m] = time.split(':').map(Number); return new Date(today.getFullYear(), today.getMonth(), today.getDate(), h, m); };
-  const s = state.settings;
-
-  for (const o of S.occurrencesIn(addDays(now, -1), addDays(now, 8)))
-    for (const m of o.ev.reminders || [])
-      once(`ev:${o.key}:${m}`, U.addMinutes(o.start, -m), () => notify(o.ev.title, `${o.ev.allDay ? U.fmtDate(o.start) : U.fmtDateTime(o.start)}${o.ev.location ? ` @${o.ev.location}` : ''}`, o.key));
-  for (const t of S.activeTodos(now))
-    if (t.due) for (const m of t.reminders || [])
-      once(`td:${t.id}:${t.due}:${m}`, U.addMinutes(parse(t.due), -m), () => notify(`期限: ${t.title}`, U.fmtDateTime(parse(t.due)), t.id));
-
-  const k = ymd(today);
-  once(`path:m:${k}`, at(s.morningTime), () => notify("今日の Today's Path", pathSummary(today), 'path'));
-  once(`path:e:${k}`, at(s.eveningTime), () => notify("明日の Today's Path", pathSummary(addDays(today, 1)), 'path', './#path-tomorrow'));
-  if (s.dailyCheck && state.meta.checkDone !== k)
-    once(`check:${k}`, at(s.checkTime), () => notify('記入漏れチェック', '今日の予定・todoに書き忘れはありませんか？', 'check'));
-  for (const a of s.alarms)
-    if (a.on && a.days.includes(now.getDay())) once(`al:${a.id}:${k}:${a.time}`, at(a.time), () => notify(a.label || '通知', a.time, a.id));
+  for (const n of Push.planNotifications(U.addMinutes(now, -15), now)) {
+    if (fired[n.key]) continue;
+    fired[n.key] = now.getTime();
+    changed = true;
+    if (!Push.pushActive()) notify(n.title, n.body, n.tag, n.url);
+  }
 
   const cutoff = now.getTime() - 10 * 86400000;
   for (const key in fired) if (fired[key] < cutoff) { delete fired[key]; changed = true; }
@@ -917,6 +909,21 @@ document.addEventListener('click', async e => {
       break;
     }
     case 'notif-perm': await Notification.requestPermission(); renderSettings(); break;
+    case 'push-on': case 'push-off': {
+      a.disabled = true;
+      try {
+        if (act === 'push-on') { await Push.enablePush(); toast('この端末で通知を受け取ります'); }
+        else { await Push.disablePush(); toast('この端末では受け取りません'); }
+      } catch (err) { toast(err.message || String(err)); }
+      renderSettings();
+      break;
+    }
+    case 'push-test': {
+      a.disabled = true;
+      try { await Push.sendTest(); toast('1〜2分以内に届きます。アプリを閉じて待ってください'); }
+      catch (err) { toast(err.message || String(err)); a.disabled = false; }
+      break;
+    }
     case 'alarm-add': state.settings.alarms.push({ id: U.uid('al'), label: '', time: '08:00', days: [1, 2, 3, 4, 5], on: true }); S.save(); break;
     case 'alarm-del': state.settings.alarms = state.settings.alarms.filter(x => x.id !== id); S.save(); break;
     case 'export': {
@@ -945,9 +952,11 @@ Sync.onStatus(() => {
   if (view === 'settings' && !document.activeElement?.closest('#authForm')) renderSettings();
 });
 Sync.initSync();
+Push.initPush().then(() => view === 'settings' && renderSettings());
 window.addEventListener('hashchange', () => { readHash(); render(); });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { tick(); if (view === 'path') renderPath(); } });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { clearPushBadge(); tick(); if (view === 'path') renderPath(); } });
 render();
+clearPushBadge();
 tick();
 setInterval(tick, 30000);
 
