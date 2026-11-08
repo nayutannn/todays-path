@@ -48,8 +48,9 @@ export function save() {
 }
 export const subscribe = f => { listeners.add(f); return () => listeners.delete(f); };
 export function replaceAll(obj) {
+  const next = migrate(obj);   // 読み込めないデータなら、今のデータを消す前にここで失敗させる
   Object.keys(state).forEach(k => delete state[k]);
-  Object.assign(state, migrate(obj));
+  Object.assign(state, next);
   save();
 }
 

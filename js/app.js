@@ -2,6 +2,7 @@ import * as U from './util.js';
 import * as S from './store.js';
 import * as Sync from './sync.js';
 import * as Push from './push.js';
+import './claude.js';
 
 const { state } = S;
 const { esc, ymd, hm, parse, addDays, startOfDay } = U;
