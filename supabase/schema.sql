@@ -35,6 +35,10 @@ grant select, insert, update, delete on public.items to authenticated;
 grant select, insert, update, delete on public.push_subscriptions to authenticated;
 grant select, insert, update, delete on public.push_schedule to authenticated;
 
+-- 通知を送る Edge Function（service_role）が予定表と宛先を読み書きできるようにする
+grant select, update on public.push_schedule to service_role;
+grant select, delete on public.push_subscriptions to service_role;
+
 -- 自分のデータだけ読み書きできるようにする
 alter table public.items enable row level security;
 alter table public.push_subscriptions enable row level security;
