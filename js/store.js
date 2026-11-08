@@ -367,9 +367,11 @@ export function approveInbox(id) {
   const list = item.kind === 'event' ? state.events : state.todos;
   const old = item.replaces && list.find(x => x.id === item.replaces);
   if (item.kind === 'event') registerTags(item.data.tags);
-  if (old) Object.assign(old, item.data, { id: old.id, updatedAt: new Date().toISOString() });
-  else if (item.kind === 'event') upsertEvent({ ...item.data, source: item.source || 'claude' });
-  else upsertTodo({ tabId: state.tabs[0].id, ...item.data, source: item.source || 'claude' });
+  const src = { source: item.source || 'claude', ...(item.sourceNote ? { sourceNote: item.sourceNote } : {}) };
+  if (old) Object.assign(old, item.data, { id: old.id, updatedAt: new Date().toISOString(),
+    changeSource: src.source, changeNote: [item.reason, item.sourceNote].filter(Boolean).join(' ／ ') });
+  else if (item.kind === 'event') upsertEvent({ ...item.data, ...src });
+  else upsertTodo({ tabId: state.tabs[0].id, ...item.data, ...src });
   state.inbox = state.inbox.filter(x => x.id !== id);
   save();
 }

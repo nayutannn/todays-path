@@ -87,7 +87,8 @@ window.TP = {
   },
 
   // 重なり・重複があれば保存せずに返す。確認のうえで保存するときは { force: true }
-  addEvent(x, { force = false, source = 'claude' } = {}) {
+  // source: 情報元（例「iCloudメール: 件名」）、sourceNote: 送信者・日時・該当箇所など（アプリに表示される）
+  addEvent(x, { force = false, source = 'claude', sourceNote = '' } = {}) {
     const [ev, err] = eventDraft(x);
     if (err) return fail(err);
     const duplicates = sameEvents(ev);
@@ -95,27 +96,27 @@ window.TP = {
     if (!force && (duplicates.length || conflicts.length)) return fail('確認が必要です', { duplicates, conflicts });
     const id = U.uid('ev');
     S.registerTags(ev.tags);
-    S.upsertEvent({ ...ev, id, source, claudeNew: true });
+    S.upsertEvent({ ...ev, id, source, ...(sourceNote ? { sourceNote } : {}), claudeNew: true });
     return { ok: true, id, conflicts };
   },
-  addTodo(x, { force = false, source = 'claude' } = {}) {
+  addTodo(x, { force = false, source = 'claude', sourceNote = '' } = {}) {
     const [t, err] = todoDraft(x);
     if (err) return fail(err);
     const duplicates = sameTodos(t);
     if (!force && duplicates.length) return fail('確認が必要です', { duplicates });
     const id = U.uid('td');
-    S.upsertTodo({ ...t, id, source, claudeNew: true });
+    S.upsertTodo({ ...t, id, source, ...(sourceNote ? { sourceNote } : {}), claudeNew: true });
     return { ok: true, id };
   },
   // 判断に迷う候補はアプリの「確認待ち」へ。reason に迷った理由を書く。
   // 既にある予定・todo と大きく違うときは replaces にその id を入れる（「追加」でその項目が書き換わる）
-  ask(kind, x, reason, { source = 'claude', replaces = null } = {}) {
+  ask(kind, x, reason, { source = 'claude', sourceNote = '', replaces = null } = {}) {
     if (kind !== 'event' && kind !== 'todo') return fail('kind は event か todo です');
     const [data, err] = kind === 'event' ? eventDraft(x) : todoDraft(x);
     if (err) return fail(err);
     if (replaces && !(kind === 'event' ? state.events : state.todos).some(e => e.id === replaces)) return fail('replaces の id が見つかりません');
     const id = U.uid('ib');
-    state.inbox.push({ id, kind, data, reason: reason || '', source, replaces, createdAt: new Date().toISOString() });
+    state.inbox.push({ id, kind, data, reason: reason || '', source, ...(sourceNote ? { sourceNote } : {}), replaces, createdAt: new Date().toISOString() });
     S.save();
     return { ok: true, id };
   },

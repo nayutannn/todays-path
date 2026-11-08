@@ -95,6 +95,22 @@ const readRem = root => [...new Set($$('.rems select', root).map(s => remVal(s.v
   .sort((a, b) => (typeof a === 'string') - (typeof b === 'string') || (typeof a === 'number' ? a - b : a.localeCompare(b)));
 
 /* ================= 予定フォーム ================= */
+/* ---------- 情報元（Claude が追加・提案した項目の出どころ） ---------- */
+const srcName = s => s === 'claude' ? 'Claude（チャットで依頼）' : s;
+// 一覧用の短い表示
+function srcLine(x) {
+  if (!x.source || x.source === 'manual') return '';
+  return `<div class="src">情報元: ${esc(srcName(x.source))}${x.sourceNote ? `<br><small>${esc(x.sourceNote)}</small>` : ''}</div>`;
+}
+// 編集画面用（変更を承認した項目は、その変更の情報元も出す）
+function srcHtml(x) {
+  if (!x) return '';
+  const parts = [];
+  if (x.source && x.source !== 'manual') parts.push(`<b>Claude が追加</b>　${esc(srcName(x.source))}${x.sourceNote ? `<br><small>${esc(x.sourceNote)}</small>` : ''}`);
+  if (x.changeSource) parts.push(`<b>Claude の提案で変更</b>　${esc(srcName(x.changeSource))}${x.changeNote ? `<br><small>${esc(x.changeNote)}</small>` : ''}`);
+  return parts.length ? `<div class="srcbox">${parts.join('<hr>')}</div>` : '';
+}
+
 function openEventForm(ev, { date, occDate } = {}) {
   const isNew = !ev;
   if (!ev) {
@@ -110,6 +126,7 @@ function openEventForm(ev, { date, occDate } = {}) {
   const m = modal(`
     <form class="form">
       <div class="mhead"><h2>${isNew ? '予定を追加' : '予定を編集'}</h2><button type="button" class="icon" data-close>×</button></div>
+      ${srcHtml(ev)}
       <input name="title" class="title-in" placeholder="タイトル" value="${esc(ev.title)}" required autocomplete="off">
       <label class="check"><input type="checkbox" name="allDay" ${ev.allDay ? 'checked' : ''}> 終日</label>
       <div class="row"><label>開始</label><span class="inline"><input type="date" name="sd" value="${sd}" required><span class="tm">${timeSelect('st', st)}</span></span></div>
@@ -223,6 +240,7 @@ function openTodoForm(t, preset = {}) {
   const m = modal(`
     <form class="form">
       <div class="mhead"><h2>${isNew ? 'todoを追加' : 'todoを編集'}</h2><button type="button" class="icon" data-close>×</button></div>
+      ${srcHtml(t)}
       <input name="title" class="title-in" placeholder="やること" value="${esc(t.title)}" required autocomplete="off">
       <div class="row"><label>リスト</label><select name="tabId">${options(state.tabs.map(x => [x.id, esc(x.name)]), t.tabId)}</select></div>
       <div class="row"><label>優先度</label><div class="seg prio">${PRIORITY.map((p, i) =>
@@ -378,7 +396,8 @@ function renderPath() {
       const d = x.data;
       const when = x.kind === 'event' ? U.fmtDateTime(parse(d.start)) : d.due ? `期限 ${U.fmtDateTime(parse(d.due))}` : '';
       return `<li><span class="kind">${x.replaces ? '変更' : x.kind === 'event' ? '予定' : 'todo'}</span>
-        <div class="body"><b>${esc(d.title)}</b> <small>${when}</small>${x.reason ? `<div class="reason">${esc(x.reason)}</div>` : ''}</div>
+        <div class="body"><b>${esc(d.title)}</b> <small>${when}</small>${x.reason ? `<div class="reason">${esc(x.reason)}</div>` : ''}
+          ${srcLine(x)}</div>
         <button class="primary small" data-act="approve" data-id="${x.id}">${x.replaces ? '変更する' : '追加'}</button>
         <button class="small" data-act="reject" data-id="${x.id}">不要</button></li>`;
     }).join('')}</ul>`, 'inbox-card');
@@ -392,7 +411,7 @@ function renderPath() {
         : x.due ? `期限 ${U.fmtDateTime(parse(x.due))}` : x.doDate ? `やる日 ${U.fmtDate(parse(x.doDate))}` : '';
       return `<li><span class="kind" ${kind === 'event' ? cs(x) : ''}>${kind === 'event' ? '予定' : 'todo'}</span>
         <div class="body" data-act="${kind === 'event' ? 'edit-event' : 'edit-todo'}" data-id="${x.id}"><b>${esc(x.title)}</b> <small>${when}</small>
-          ${x.source && x.source !== 'claude' ? `<div class="reason">${esc(x.source)}から</div>` : ''}</div>
+          ${srcLine(x)}</div>
         <button class="small" data-act="seen" data-id="${x.id}">確認済み</button></li>`;
     }).join('')}</ul>`, 'inbox-card');
   }

@@ -7,7 +7,9 @@
 
 操作の書式（JSON の配列）:
   {"type": "event", "title": "...", "start": "2026-11-20T10:00", "end": "2026-11-20T11:30", "allDay": false,
-   "location": "", "tags": ["学校"], "memo": "", "reminders": [10], "source": "iCloudメール: 件名"}
+   "location": "", "tags": ["学校"], "memo": "", "reminders": [10], "source": "iCloudメール: 件名",
+   "sourceNote": "11/8 受信・差出人 〇〇／本文「11月20日10時から…」"}
+  source（どこから）と sourceNote（いつ・誰から・どの部分か）はアプリの画面に出る。必ず両方入れる
   {"type": "todo", "title": "...", "tab": "全般", "due": "2026-11-20T23:55", "doDate": "", "priority": 0,
    "longLead": 0, "memo": "", "reminders": ["d0@12:00"], "source": "Teams: 〇〇"}
   {"type": "ask", "kind": "event" | "todo", ...上と同じ項目..., "reason": "迷った理由", "replaces": "既にある項目の id（任意）"}
@@ -112,14 +114,14 @@ def dump(args):
         days = occurrences(e, a, b)
         if not days:
             continue
-        x = {k: e.get(k) for k in ('id', 'title', 'start', 'end', 'allDay', 'location', 'tags', 'source') if e.get(k) not in (None, '', [])}
+        x = {k: e.get(k) for k in ('id', 'title', 'start', 'end', 'allDay', 'location', 'tags', 'source', 'sourceNote') if e.get(k) not in (None, '', [])}
         if e.get('memo'):
             x['memo'] = e['memo'][:200]
         if (e.get('repeat') or {}).get('freq', 'none') != 'none':
             x['repeat'] = e['repeat']
             x['dates'] = days[:20]
         events.append(x)
-    todos = [{**{k: t.get(k) for k in ('id', 'title', 'due', 'doDate', 'priority', 'source') if t.get(k) not in (None, '', 0)},
+    todos = [{**{k: t.get(k) for k in ('id', 'title', 'due', 'doDate', 'priority', 'source', 'sourceNote') if t.get(k) not in (None, '', 0)},
               'tab': tabs.get(t.get('tabId'), '')} for t in st['todos'] if not t.get('done')]
     inbox = [{'id': i['id'], 'kind': i['kind'], 'title': i['data'].get('title'), 'start': i['data'].get('start') or i['data'].get('due'),
               'reason': i.get('reason')} for i in st['inbox']]
@@ -196,10 +198,12 @@ def add(path, dry):
                 raise ValueError('type は event / todo / ask（ask は kind も）')
             data = event_data(x, st) if kind == 'event' else todo_data(x, st)
             source = x.get('source') or 'claude'
+            note = str(x.get('sourceNote') or '').strip()
+            src = {'source': source, **({'sourceNote': note} if note else {})}
             if x.get('type') == 'ask':
                 if x.get('replaces') and not any(e['id'] == x['replaces'] for e in st['events' if kind == 'event' else 'todos']):
                     raise ValueError('replaces の id が見つかりません')
-                row = {'id': uid('ib'), 'kind': kind, 'data': data, 'reason': x.get('reason', ''), 'source': source,
+                row = {'id': uid('ib'), 'kind': kind, 'data': data, 'reason': x.get('reason', ''), **src,
                        'replaces': x.get('replaces'), 'createdAt': stamp}
                 rows.append({'kind': 'inbox', 'id': row['id'], 'data': row})
                 report.append(f'[{i}] 確認待ち: {data["title"]}')
@@ -209,7 +213,7 @@ def add(path, dry):
                 report.append(f'[{i}] skip（似た項目あり）: {data["title"]} ← ' + ', '.join(f'{d["id"]} {d["title"]} {d.get("start") or d.get("due", "")}' for d in dup))
                 continue
             p = 'ev' if kind == 'event' else 'td'
-            item = {**data, 'id': uid(p), 'createdAt': stamp, 'updatedAt': stamp, 'source': source, 'claudeNew': True}
+            item = {**data, 'id': uid(p), 'createdAt': stamp, 'updatedAt': stamp, **src, 'claudeNew': True}
             if kind == 'todo':
                 order += 1
                 item.update({'done': False, 'order': order})
