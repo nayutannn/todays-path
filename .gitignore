@@ -2,3 +2,4 @@
 .env
 *.secret
 __pycache__/
+.claude/

@@ -38,6 +38,7 @@ await TP.sync()
 - 提出物のように「締切」があるものは todo（`due`）、時間が決まっている行事は予定にする。行事の準備（持ち物など）は、行事の前日を `doDate` にした todo にする
 
 ## 開発メモ
-- ビルドなしの ES modules。ローカル確認は `python -m http.server 8765 -d todays-path`（`.claude/launch.json` の `todays-path`）
+- ビルドなしの ES modules。ローカル確認は `python -m http.server 8765`（`.claude/launch.json` の `todays-path`）
+- PC 上の本体は `C:/Users/Osaka/todays-path`、週1の自動バックアップは `C:/Users/Osaka/TodaysPath/Backup`（タスク スケジューラ「TodaysPath 週1バックアップ」、日曜21時）。OneDrive は使わない
 - データは `js/store.js`、Supabase 同期は `js/sync.js`、通知は `js/push.js` と `supabase/functions/send-push`
 - `vapid.secret` は秘密鍵。読まない・表示しない・コミットしない
