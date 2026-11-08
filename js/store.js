@@ -15,7 +15,63 @@ export const DEFAULT_SETTINGS = {
   nightPremium: true,        // 22:00〜5:00 の深夜割増 25%
   todoSort: 'manual',
   alarms: [],                // 自由に設定する通知 {id,label,time,days:[0-6],on}
+  tags: null,                // 予定のタグと色 [{name,color}]（null なら初回に今の予定から作る）
 };
+
+/* ---------- タグと色 ---------- */
+export const PALETTE = [
+  ['#d64545', '赤'], ['#e8607a', 'ピンク'], ['#c2185b', '濃いピンク'], ['#e8833a', 'オレンジ'], ['#d9a41b', '黄'], ['#a0892c', 'からし'],
+  ['#8bb33a', '黄緑'], ['#2f8f5b', '緑'], ['#1f7a6d', '深緑'], ['#2aa5b8', '水色'], ['#3b8fd4', '空色'], ['#3b6fd4', '青'],
+  ['#2e3f9e', '紺'], ['#6a5acd', '青紫'], ['#8a5cd1', '紫'], ['#b05cc4', '赤紫'], ['#8d6e63', '茶'], ['#7d7d84', '灰'], ['#3a3a40', '黒'],
+];
+export const DEFAULT_COLOR = '#3b6fd4';
+const OLD_COLORS = { blue: '#3b6fd4', green: '#2f8f5b', orange: '#e8833a', red: '#d64545', purple: '#8a5cd1', gray: '#7d7d84' };
+export const tagList = () => state.settings.tags || [];
+export const tagColor = name => tagList().find(t => t.name === name)?.color || null;
+// 予定の色 = 付いているタグのうち、色が決まっている最初のタグの色
+export function eventColor(ev) {
+  for (const t of ev.tags || []) { const c = tagColor(t); if (c) return c; }
+  return DEFAULT_COLOR;
+}
+// まだ登録されていないタグを、使われていない色で登録する
+export function registerTags(names) {
+  const list = state.settings.tags ||= [];
+  let added = false;
+  for (const name of names || []) {
+    if (!name || list.some(t => t.name === name)) continue;
+    const used = new Set(list.map(t => t.color));
+    list.push({ name, color: (PALETTE.find(([c]) => !used.has(c)) || PALETTE[17])[0] });
+    added = true;
+  }
+  return added;
+}
+// 予定に使われているのに登録されていないタグ（タグの編集画面に出す）
+export const unregisteredTags = () => [...new Set(state.events.flatMap(e => e.tags || []))].filter(n => !tagColor(n));
+export function renameTag(from, to) {
+  const t = tagList().find(x => x.name === from);
+  if (!t || !to || from === to) return;
+  if (tagList().some(x => x.name === to)) state.settings.tags = tagList().filter(x => x !== t);
+  else t.name = to;
+  for (const ev of state.events) if (ev.tags?.includes(from)) { ev.tags = [...new Set(ev.tags.map(x => x === from ? to : x))]; ev.updatedAt = new Date().toISOString(); }
+  if (state.settings.workTag === from) state.settings.workTag = to;
+  save();
+}
+export function deleteTag(name) {
+  state.settings.tags = tagList().filter(x => x.name !== name);
+  for (const ev of state.events) if (ev.tags?.includes(name)) { ev.tags = ev.tags.filter(x => x !== name); ev.updatedAt = new Date().toISOString(); }
+  save();
+}
+
+/* ---------- 通知の時刻 ---------- */
+// 数値 = 何分前 / 'd0@12:00' = 当日 12:00、'd-1@20:00' = 前日 20:00（基準は予定の開始日・todo の期限日）
+export function reminderAt(base, m) {
+  if (typeof m === 'string') {
+    const r = /^d(-?\d+)@(\d{2}):(\d{2})$/.exec(m);
+    if (!r) return null;
+    return new Date(base.getFullYear(), base.getMonth(), base.getDate() + +r[1], +r[2], +r[3]);
+  }
+  return addMinutes(base, -m);
+}
 
 const listeners = new Set();
 export const state = load();
@@ -35,6 +91,13 @@ function migrate(s) {
   if (!s.tabs.length) s.tabs = f.tabs;
   s.settings = { ...DEFAULT_SETTINGS, ...s.settings };
   s.meta = { ...f.meta, ...s.meta };
+  // 以前の「色」を、タグの色に引き継ぐ
+  if (!s.settings.tags) {
+    const tags = [{ name: s.settings.workTag || 'バイト', color: '#e8833a' }];
+    for (const ev of s.events) for (const name of ev.tags || [])
+      if (!tags.some(t => t.name === name)) tags.push({ name, color: OLD_COLORS[ev.color] || DEFAULT_COLOR });
+    s.settings.tags = tags;
+  }
   return s;
 }
 function load() {
@@ -297,14 +360,31 @@ export function buildPath(target, now = new Date()) {
 }
 
 /* ---------- 確認待ち（Claudeが判断に迷った候補） ---------- */
+// replaces があれば、新しく足さずに既にある予定・todo をその内容で書き換える（Claude が違いを見つけたとき）
 export function approveInbox(id) {
   const item = state.inbox.find(x => x.id === id);
   if (!item) return;
-  if (item.kind === 'event') upsertEvent({ ...item.data, source: item.source || 'claude' });
+  const list = item.kind === 'event' ? state.events : state.todos;
+  const old = item.replaces && list.find(x => x.id === item.replaces);
+  if (item.kind === 'event') registerTags(item.data.tags);
+  if (old) Object.assign(old, item.data, { id: old.id, updatedAt: new Date().toISOString() });
+  else if (item.kind === 'event') upsertEvent({ ...item.data, source: item.source || 'claude' });
   else upsertTodo({ tabId: state.tabs[0].id, ...item.data, source: item.source || 'claude' });
   state.inbox = state.inbox.filter(x => x.id !== id);
   save();
 }
+/* ---------- Claude が自動で追加した予定・todo（確認するまで Path に出す） ---------- */
+export const claudeAdded = () => [
+  ...state.events.filter(e => e.claudeNew).map(ev => ({ kind: 'event', item: ev })),
+  ...state.todos.filter(t => t.claudeNew && !t.done).map(t => ({ kind: 'todo', item: t })),
+].sort((a, b) => (b.item.createdAt || '').localeCompare(a.item.createdAt || ''));
+export function markSeen(ids) {
+  const all = !ids;
+  for (const x of [...state.events, ...state.todos])
+    if (x.claudeNew && (all || ids.includes(x.id))) { delete x.claudeNew; x.updatedAt = new Date().toISOString(); }
+  save();
+}
+
 export function rejectInbox(id) {
   state.inbox = state.inbox.filter(x => x.id !== id);
   save();

@@ -13,7 +13,7 @@ const NONE = { freq: 'none', interval: 1, until: '' };
 const fail = (error, extra = {}) => ({ ok: false, error, ...extra });
 const occView = o => ({ id: o.ev.id, date: ymd(o.start), title: o.ev.title, allDay: !!o.ev.allDay,
   start: o.ev.allDay ? ymd(o.start) : U.toLocal(o.start), end: o.ev.allDay ? ymd(o.end) : U.toLocal(o.end),
-  location: o.ev.location || '', tags: o.ev.tags || [], source: o.ev.source });
+  location: o.ev.location || '', tags: o.ev.tags || [], source: o.ev.source, memo: o.ev.memo || '' });
 const todoView = t => ({ id: t.id, title: t.title, tab: state.tabs.find(x => x.id === t.tabId)?.name, due: t.due || '',
   doDate: t.doDate || '', priority: t.priority || 0, done: !!t.done, memo: t.memo || '', source: t.source });
 const norm = s => String(s || '').replace(/[\s　・\-ー（）()「」【】]/g, '').toLowerCase();
@@ -31,7 +31,7 @@ function eventDraft(x) {
   const allDay = !!x.allDay || DATE.test(x.start || '');
   const ev = {
     title: String(x.title || '').trim(), allDay, start: x.start, end: x.end || x.start,
-    location: x.location || '', memo: x.memo || '', tags: x.tags || [], color: x.color || 'blue',
+    location: x.location || '', memo: x.memo || '', tags: x.tags || [],
     repeat: { ...NONE, ...x.repeat }, reminders: x.reminders ?? (allDay ? [] : [10]),
   };
   if (S.isWork(ev)) { ev.wage = x.wage ?? state.settings.defaultWage; ev.breakMin = x.breakMin ?? 0; }
@@ -69,7 +69,10 @@ window.TP = {
     user: Sync.currentUser()?.email || null, sync: Sync.status.state,
     events: state.events.length, todos: state.todos.length, inbox: state.inbox.length,
     tabs: state.tabs.map(x => x.name), workTag: state.settings.workTag, defaultWage: state.settings.defaultWage,
+    tags: S.tagList().map(t => t.name), unseen: S.claudeAdded().length,
   }),
+  // ユーザーが作ったタグ（予定を追加するときは、この中から合うものを付ける）
+  tags: () => [...S.tagList().map(t => ({ ...t })), ...S.unregisteredTags().map(name => ({ name, color: null }))],
   // from / to は YYYY-MM-DD（to はその日を含む）
   events: (from, to = from) => S.occurrencesIn(parse(from), addDays(parse(to), 1)).map(occView),
   todos: ({ done = false } = {}) => state.todos.filter(t => done || !t.done).map(todoView),
@@ -91,7 +94,8 @@ window.TP = {
     const conflicts = S.findConflicts(ev).map(occView);
     if (!force && (duplicates.length || conflicts.length)) return fail('確認が必要です', { duplicates, conflicts });
     const id = U.uid('ev');
-    S.upsertEvent({ ...ev, id, source });
+    S.registerTags(ev.tags);
+    S.upsertEvent({ ...ev, id, source, claudeNew: true });
     return { ok: true, id, conflicts };
   },
   addTodo(x, { force = false, source = 'claude' } = {}) {
@@ -100,18 +104,32 @@ window.TP = {
     const duplicates = sameTodos(t);
     if (!force && duplicates.length) return fail('確認が必要です', { duplicates });
     const id = U.uid('td');
-    S.upsertTodo({ ...t, id, source });
+    S.upsertTodo({ ...t, id, source, claudeNew: true });
     return { ok: true, id };
   },
-  // 判断に迷う候補はアプリの「確認待ち」へ。reason に迷った理由を書く
-  ask(kind, x, reason, { source = 'claude' } = {}) {
+  // 判断に迷う候補はアプリの「確認待ち」へ。reason に迷った理由を書く。
+  // 既にある予定・todo と大きく違うときは replaces にその id を入れる（「追加」でその項目が書き換わる）
+  ask(kind, x, reason, { source = 'claude', replaces = null } = {}) {
     if (kind !== 'event' && kind !== 'todo') return fail('kind は event か todo です');
     const [data, err] = kind === 'event' ? eventDraft(x) : todoDraft(x);
     if (err) return fail(err);
+    if (replaces && !(kind === 'event' ? state.events : state.todos).some(e => e.id === replaces)) return fail('replaces の id が見つかりません');
     const id = U.uid('ib');
-    state.inbox.push({ id, kind, data, reason: reason || '', source, createdAt: new Date().toISOString() });
+    state.inbox.push({ id, kind, data, reason: reason || '', source, replaces, createdAt: new Date().toISOString() });
     S.save();
     return { ok: true, id };
   },
+  // Claude が自分で追加した予定・todo だけを消せる（ユーザーが入れたものは消さない）
+  removeOwn(id) {
+    const ev = state.events.find(e => e.id === id), t = state.todos.find(x => x.id === id);
+    const it = ev || t;
+    if (!it) return fail('見つかりません');
+    if (!it.source || it.source === 'manual') return fail('ユーザーが入れた項目は消せません');
+    ev ? S.deleteEvent(id) : S.deleteTodo(id);
+    return { ok: true };
+  },
+  // 確認待ちの判断（ユーザーがチャットで答えたときに使う）
+  approve: id => { S.approveInbox(id); return { ok: true }; },
+  reject: id => { S.rejectInbox(id); return { ok: true }; },
   sync: async () => { await Sync.syncNow(); return Sync.status.state; },
 };

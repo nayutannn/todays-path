@@ -26,13 +26,29 @@ export function planNotifications(from, to) {
   const add = (key, at, title, body, tag, url = './#path') => { if (at >= from && at < to) out.push({ key, at, title, body, tag, url }); };
   const s = state.settings;
 
-  for (const o of S.occurrencesIn(addDays(from, -1), addDays(to, 8)))
-    for (const m of o.ev.reminders || [])
-      add(`ev:${o.key}:${m}`, U.addMinutes(o.start, -m), o.ev.title,
+  for (const o of S.occurrencesIn(addDays(from, -2), addDays(to, 8)))
+    for (const m of o.ev.reminders || []) {
+      const at = S.reminderAt(o.start, m);
+      if (at) add(`ev:${o.key}:${m}`, at, o.ev.title,
         `${o.ev.allDay ? U.fmtDate(o.start) : U.fmtDateTime(o.start)}${o.ev.location ? ` @${o.ev.location}` : ''}`, o.key);
+    }
   for (const t of S.activeTodos(from))
-    if (t.due) for (const m of t.reminders || [])
-      add(`td:${t.id}:${t.due}:${m}`, U.addMinutes(parse(t.due), -m), `期限: ${t.title}`, U.fmtDateTime(parse(t.due)), t.id);
+    if (t.due) for (const m of t.reminders || []) {
+      const at = S.reminderAt(parse(t.due), m);
+      if (at) add(`td:${t.id}:${t.due}:${m}`, at, `期限: ${t.title}`, U.fmtDateTime(parse(t.due)), t.id);
+    }
+
+  // Claude が自動で追加したもの（同じ分に追加したものは 1 つの通知にまとめる）
+  const groups = new Map();
+  for (const { kind, item } of S.claudeAdded()) {
+    const k = (item.createdAt || '').slice(0, 16);
+    if (!k) continue;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(`${kind === 'event' ? '予定' : 'todo'}「${item.title}」`);
+  }
+  for (const [k, list] of groups)
+    add(`claude:${k}`, U.addMinutes(new Date(`${k}:00Z`), 1), `Claude が${list.length}件追加しました`,
+      list.slice(0, 3).join('、') + (list.length > 3 ? ' ほか' : ''), 'claude');
 
   for (let day = startOfDay(from); day < to; day = addDays(day, 1)) {
     const k = ymd(day);

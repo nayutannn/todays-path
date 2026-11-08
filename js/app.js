@@ -4,17 +4,21 @@ import * as Sync from './sync.js';
 import * as Push from './push.js';
 import './claude.js';
 import * as Backup from './backup.js';
+import { holidayName } from './holidays.js';
 
 const { state } = S;
 const { esc, ymd, hm, parse, addDays, startOfDay } = U;
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
-const COLORS = { blue: '青', green: '緑', orange: '橙', red: '赤', purple: '紫', gray: '灰' };
 const PRIORITY = ['なし', '低', '中', '高'];
 const LEADS = [[0, 'なし'], [3, '3日前から'], [7, '1週間前から'], [14, '2週間前から'], [30, '1か月前から']];
-const REM_PRESETS = [[0, 'ちょうど'], [5, '5分前'], [10, '10分前'], [15, '15分前'], [30, '30分前'], [60, '1時間前'],
-  [120, '2時間前'], [180, '3時間前'], [1440, '1日前'], [2880, '2日前'], [10080, '1週間前']];
+// 数値は「何分前」、'd0@12:00' は当日 12 時（S.reminderAt を参照）
+const REM_PRESETS = [[0, 'ちょうど'], [5, '5分前'], [10, '10分前'], [15, '15分前'], [30, '30分前'], [45, '45分前'], [60, '1時間前'],
+  [90, '1時間30分前'], [120, '2時間前'], [180, '3時間前'], [360, '6時間前'], [720, '12時間前'],
+  ['d0@07:00', '当日 7時'], ['d0@09:00', '当日 9時'], ['d0@12:00', '当日 12時'], ['d0@16:00', '当日 16時'], ['d0@20:00', '当日 20時'],
+  ['d-1@12:00', '前日 12時'], ['d-1@20:00', '前日 20時'], ['d-1@22:00', '前日 22時'],
+  [1440, '1日前'], [2880, '2日前'], [4320, '3日前'], [10080, '1週間前']];
 
 let view = 'path';
 let pathTarget = null;      // null = 今日（0時で切り替わる）
@@ -61,6 +65,10 @@ function choose(message, choices) {
   });
 }
 
+// 予定の色（タグで決まる）を CSS 変数 --c として渡す
+const cs = ev => `style="--c:${S.eventColor(ev)}"`;
+const tagChip = (name, on) => `<button type="button" class="tchip ${on ? 'on' : ''}" data-tag="${esc(name)}" style="--c:${S.tagColor(name) || S.DEFAULT_COLOR}">${esc(name)}</button>`;
+
 const timeSelect = (name, value) => `<select name="${name}">${U.TIMES.map(t =>
   `<option ${t === value ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
 const options = (pairs, value) => pairs.map(([v, l]) => `<option value="${v}" ${String(v) === String(value) ? 'selected' : ''}>${l}</option>`).join('');
@@ -82,7 +90,9 @@ function bindRem(root) {
     if (e.target.closest('[data-rem-del]')) e.target.closest('.rem').remove();
   });
 }
-const readRem = root => [...new Set($$('.rems select', root).map(s => Number(s.value)))].sort((a, b) => a - b);
+const remVal = v => /^-?\d+$/.test(v) ? Number(v) : v;
+const readRem = root => [...new Set($$('.rems select', root).map(s => remVal(s.value)))]
+  .sort((a, b) => (typeof a === 'string') - (typeof b === 'string') || (typeof a === 'number' ? a - b : a.localeCompare(b)));
 
 /* ================= 予定フォーム ================= */
 function openEventForm(ev, { date, occDate } = {}) {
@@ -92,7 +102,7 @@ function openEventForm(ev, { date, occDate } = {}) {
     const st = date ? new Date(...date.split('-').map((x, i) => i === 1 ? x - 1 : +x), Math.min(now.getHours() + 1, 23))
       : new Date(now.getFullYear(), now.getMonth(), now.getDate(), Math.min(now.getHours() + 1, 23));
     ev = { title: '', allDay: false, start: U.toLocal(st), end: U.toLocal(U.addMinutes(st, 60)), tags: [],
-      repeat: { freq: 'none', interval: 1, until: '' }, reminders: [10], color: 'blue', location: '', memo: '' };
+      repeat: { freq: 'none', interval: 1, until: '' }, reminders: [10], location: '', memo: '' };
   }
   const [sd, st = '09:00'] = ev.start.split('T');
   const [ed, et = '10:00'] = (ev.end || ev.start).split('T');
@@ -107,14 +117,15 @@ function openEventForm(ev, { date, occDate } = {}) {
       ${repeatFields(ev.repeat)}
       <div class="row rep-until"><label>繰り返し終了</label><input type="date" name="until" value="${ev.repeat?.until || ''}"></div>
       <div class="row"><label>場所</label><input name="location" value="${esc(ev.location)}" autocomplete="off"></div>
-      <div class="row"><label>タグ</label><input name="tags" value="${esc((ev.tags || []).join(', '))}" placeholder="例: ${esc(state.settings.workTag)}, 学校" autocomplete="off"></div>
-      <div class="tagchips">${[state.settings.workTag, ...new Set(state.events.flatMap(e => e.tags || []))].filter((v, i, a) => v && a.indexOf(v) === i).slice(0, 8)
-        .map(t => `<button type="button" class="chip" data-tag="${esc(t)}">${esc(t)}</button>`).join('')}</div>
+      <div class="row top"><label>タグ<br><small>色はタグで決まります</small></label>
+        <div class="tagpick">${[...S.tagList().map(t => t.name), ...S.unregisteredTags(), ...(ev.tags || [])].filter((v, i, a) => v && a.indexOf(v) === i)
+          .map(t => tagChip(t, (ev.tags || []).includes(t))).join('')}
+          <input class="newtag" placeholder="＋ 新しいタグ" autocomplete="off" enterkeyhint="done"></div></div>
+      <input type="hidden" name="tags" value="${esc((ev.tags || []).join(','))}">
       <div class="work ${work ? '' : 'hidden'}">
         <div class="row"><label>時給</label><span class="inline"><input type="number" name="wage" min="0" step="10" value="${ev.wage ?? state.settings.defaultWage}" class="num w">円</span></div>
         <div class="row"><label>休憩</label><span class="inline"><input type="number" name="breakMin" min="0" step="5" value="${ev.breakMin ?? 0}" class="num">分</span></div>
       </div>
-      <div class="row"><label>色</label><select name="color">${options(Object.entries(COLORS), ev.color || 'blue')}</select></div>
       <div class="row top"><label>通知</label><div>${remEditor(ev.reminders)}</div></div>
       <textarea name="memo" placeholder="メモ" rows="3">${esc(ev.memo)}</textarea>
       <div class="actions">
@@ -127,20 +138,36 @@ function openEventForm(ev, { date, occDate } = {}) {
   const sync = () => {
     f.classList.toggle('allday', f.allDay.checked);
     $('.rep-until', f).classList.toggle('hidden', f.freq.value === 'none');
-    $('.work', f).classList.toggle('hidden', !f.tags.value.split(/[,、]/).map(x => x.trim()).includes(state.settings.workTag));
+    $('.work', f).classList.toggle('hidden', !readTags().includes(state.settings.workTag));
   };
+  const readTags = () => f.tags.value.split(',').filter(Boolean);
   f.addEventListener('input', sync);
   f.sd.addEventListener('change', () => { if (f.ed.value < f.sd.value) f.ed.value = f.sd.value; });
   f.st.addEventListener('change', () => {
     if (f.sd.value === f.ed.value && f.et.value <= f.st.value) f.et.value = U.TIMES[Math.min(287, U.TIMES.indexOf(f.st.value) + 12)];
   });
-  $('.tagchips', f).addEventListener('click', e => {
-    const t = e.target.closest('[data-tag]')?.dataset.tag;
-    if (!t) return;
-    const cur = f.tags.value.split(/[,、]/).map(x => x.trim()).filter(Boolean);
-    f.tags.value = (cur.includes(t) ? cur.filter(x => x !== t) : [...cur, t]).join(', ');
+  const pick = $('.tagpick', f);
+  pick.addEventListener('click', e => {
+    const b = e.target.closest('[data-tag]');
+    if (!b) return;
+    const t = b.dataset.tag, cur = readTags();
+    f.tags.value = (cur.includes(t) ? cur.filter(x => x !== t) : [...cur, t]).join(',');
+    b.classList.toggle('on', !cur.includes(t));
     sync();
   });
+  // 新しいタグ: 入力して Enter（または欄から離れる）で、選んだ状態のタグとして足す
+  const nt = $('.newtag', pick);
+  const addNew = () => {
+    const name = nt.value.replace(/,/g, '').trim();
+    nt.value = '';
+    if (!name) return;
+    if (!readTags().includes(name)) f.tags.value = [...readTags(), name].join(',');
+    const old = $$('[data-tag]', pick).find(b => b.dataset.tag === name);
+    if (old) old.classList.add('on'); else nt.insertAdjacentHTML('beforebegin', tagChip(name, true));
+    sync();
+  };
+  nt.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addNew(); } });
+  nt.addEventListener('change', addNew);
   sync();
   if (isNew) setTimeout(() => f.elements.title.focus(), 50);
 
@@ -152,8 +179,7 @@ function openEventForm(ev, { date, occDate } = {}) {
       start: allDay ? f.sd.value : `${f.sd.value}T${f.st.value}`,
       end: allDay ? f.ed.value : `${f.ed.value}T${f.et.value}`,
       location: f.location.value.trim(), memo: f.memo.value,
-      tags: f.tags.value.split(/[,、]/).map(x => x.trim()).filter(Boolean),
-      color: f.color.value,
+      tags: readTags(),
       repeat: { freq: f.freq.value, interval: Math.max(1, +f.interval.value || 1), until: f.freq.value === 'none' ? '' : f.until.value },
       reminders: readRem(f),
     };
@@ -165,6 +191,8 @@ function openEventForm(ev, { date, occDate } = {}) {
       const ok = await choose(`<b>⚠ ダブルブッキング</b><br>次の予定と時間が重なっています。<br>${list}`, [['save', 'それでも保存', 'primary']]);
       if (!ok) return;
     }
+    delete draft.color;      // 色はタグで決まる（以前の色の指定は使わない）
+    S.registerTags(draft.tags);
     S.upsertEvent(draft);
     m.close();
     toast('予定を保存しました');
@@ -294,7 +322,7 @@ function timeline(p, now) {
   const y = m => (m - from) * PX_PER_HOUR / 60;
 
   let html = allDay.length ? `<div class="tl-allday">${allDay.map(o =>
-    `<span class="tl-ad c-${o.ev.color || 'blue'}" data-act="edit-event" data-id="${o.ev.id}" data-occ="${ymd(day)}">${esc(o.ev.title)}</span>`).join('')}</div>` : '';
+    `<span class="tl-ad" ${cs(o.ev)} data-act="edit-event" data-id="${o.ev.id}" data-occ="${ymd(day)}">${esc(o.ev.title)}</span>`).join('')}</div>` : '';
   if (!segs.length && !deadlines.length) return html;
 
   html += `<div class="tl" style="height:${y(to)}px">`;
@@ -302,8 +330,8 @@ function timeline(p, now) {
   for (const g of segs) {
     const o = g.o;
     const h = Math.max(20, y(g.e) - y(g.s) - 2);
-    html += `<div class="tl-ev c-${o.ev.color || 'blue'} ${h < 30 ? 'short' : ''} ${p.conflicts.has(o.key) ? 'conflict' : ''}"
-      style="top:${y(g.s)}px;height:${h}px;--l:${g.lane};--n:${g.n}" data-act="edit-event" data-id="${o.ev.id}" data-occ="${ymd(o.start)}">
+    html += `<div class="tl-ev ${h < 30 ? 'short' : ''} ${p.conflicts.has(o.key) ? 'conflict' : ''}"
+      style="top:${y(g.s)}px;height:${h}px;--l:${g.lane};--n:${g.n};--c:${S.eventColor(o.ev)}" data-act="edit-event" data-id="${o.ev.id}" data-occ="${ymd(o.start)}">
       <b>${esc(o.ev.title)}</b>
       <small>${hm(o.start)}–${hm(o.end)}${o.ev.location ? ` @${esc(o.ev.location)}` : ''}</small>
       ${p.conflicts.has(o.key) ? '<span class="chip over">重複</span>' : ''}
@@ -335,7 +363,8 @@ function renderPath() {
 
   let html = `
     <header class="vh">
-      <div><h1>Today's Path</h1><div class="sub">${isToday ? '今日' : ymd(target) === ymd(addDays(now, 1)) ? '明日' : ''} ${U.fmtDate(target)}</div></div>
+      <div><h1>Today's Path</h1><div class="sub">${isToday ? '今日' : ymd(target) === ymd(addDays(now, 1)) ? '明日' : ''} ${U.fmtDate(target)}
+        ${holidayName(ymd(target)) ? `<span class="hol-name">${holidayName(ymd(target))}</span>` : ''}</div></div>
       <div class="seg small">
         <button data-act="pt" data-v="-1">‹</button>
         <button data-act="pt" data-v="today" class="${isToday ? 'on' : ''}">今日</button>
@@ -348,10 +377,23 @@ function renderPath() {
     html += card(`確認待ち <span class="count">${state.inbox.length}</span>`, `<ul class="inbox">${state.inbox.map(x => {
       const d = x.data;
       const when = x.kind === 'event' ? U.fmtDateTime(parse(d.start)) : d.due ? `期限 ${U.fmtDateTime(parse(d.due))}` : '';
-      return `<li><span class="kind">${x.kind === 'event' ? '予定' : 'todo'}</span>
+      return `<li><span class="kind">${x.replaces ? '変更' : x.kind === 'event' ? '予定' : 'todo'}</span>
         <div class="body"><b>${esc(d.title)}</b> <small>${when}</small>${x.reason ? `<div class="reason">${esc(x.reason)}</div>` : ''}</div>
-        <button class="primary small" data-act="approve" data-id="${x.id}">追加</button>
+        <button class="primary small" data-act="approve" data-id="${x.id}">${x.replaces ? '変更する' : '追加'}</button>
         <button class="small" data-act="reject" data-id="${x.id}">不要</button></li>`;
+    }).join('')}</ul>`, 'inbox-card');
+  }
+
+  const added = S.claudeAdded();
+  if (added.length) {
+    html += card(`Claude が追加しました <span class="count">${added.length}</span>
+      <button class="small push-right" data-act="seen-all">すべて確認済みにする</button>`, `<ul class="inbox added">${added.map(({ kind, item: x }) => {
+      const when = kind === 'event' ? (x.allDay ? U.fmtDate(parse(x.start)) + (x.end && x.end !== x.start ? `〜${U.fmtDate(parse(x.end))}` : '') : U.fmtDateTime(parse(x.start)))
+        : x.due ? `期限 ${U.fmtDateTime(parse(x.due))}` : x.doDate ? `やる日 ${U.fmtDate(parse(x.doDate))}` : '';
+      return `<li><span class="kind" ${kind === 'event' ? cs(x) : ''}>${kind === 'event' ? '予定' : 'todo'}</span>
+        <div class="body" data-act="${kind === 'event' ? 'edit-event' : 'edit-todo'}" data-id="${x.id}"><b>${esc(x.title)}</b> <small>${when}</small>
+          ${x.source && x.source !== 'claude' ? `<div class="reason">${esc(x.source)}から</div>` : ''}</div>
+        <button class="small" data-act="seen" data-id="${x.id}">確認済み</button></li>`;
     }).join('')}</ul>`, 'inbox-card');
   }
 
@@ -383,27 +425,57 @@ function renderPath() {
 /* ================= カレンダー（縦に連続） ================= */
 const weekStartOf = d => addDays(startOfDay(d), -((d.getDay() - state.settings.weekStart + 7) % 7));
 
+// 1 マスに出せる行数（帯と時間ありの予定の合計）。それ以上は「+n」
+const CELL_ROWS = 4;
+const lastDayOf = o => startOfDay(o.end > o.start ? new Date(o.end - 1) : o.start);
+
 function weeksHtml(first, n) {
-  const map = S.dayMap(first, addDays(first, 7 * n));
+  const occs = S.occurrencesIn(first, addDays(first, 7 * n));
   const todayKey = ymd(new Date());
   let html = '';
   for (let w = 0; w < n; w++) {
-    const mid = Array.from({ length: 7 }, (_, i) => addDays(first, w * 7 + i)).find(d => d.getDate() === 15);
-    html += `<div class="week">${mid ? `<div class="wm" aria-hidden="true"><span>${mid.getMonth() + 1}</span><small>${mid.getFullYear()}</small></div>` : ''}`;
+    const ws = addDays(first, w * 7), we = addDays(ws, 7);
+    const inWeek = occs.filter(o => o.start < we && lastDayOf(o) >= ws);
+    // 終日の予定と、日をまたぐ予定は帯にする（週の中でつながった 1 本の帯）
+    const isBar = o => o.ev.allDay || ymd(lastDayOf(o)) !== ymd(o.start);
+    const bars = inWeek.filter(isBar).map(o => ({
+      o, c0: Math.max(0, U.daysBetween(ws, o.start)), c1: Math.min(6, U.daysBetween(ws, lastDayOf(o))),
+    })).sort((a, b) => a.c0 - b.c0 || (b.c1 - b.c0) - (a.c1 - a.c0) || (b.o.ev.allDay - a.o.ev.allDay));
+    const lanes = [];
+    for (const b of bars) {
+      b.lane = lanes.findIndex(end => end < b.c0);
+      if (b.lane < 0) { b.lane = lanes.length; lanes.push(-1); }
+      lanes[b.lane] = b.c1;
+    }
+    const shown = Math.min(lanes.length, CELL_ROWS - 1);
+    const hiddenBars = Array(7).fill(0);
+    for (const b of bars) if (b.lane >= shown) for (let c = b.c0; c <= b.c1; c++) hiddenBars[c]++;
+
+    const mid = Array.from({ length: 7 }, (_, i) => addDays(ws, i)).find(d => d.getDate() === 15);
+    html += `<div class="week" style="--lanes:${shown}">${mid ? `<div class="wm" aria-hidden="true"><span>${mid.getMonth() + 1}</span><small>${mid.getFullYear()}</small></div>` : ''}`;
     for (let i = 0; i < 7; i++) {
-      const d = addDays(first, w * 7 + i);
+      const d = addDays(ws, i);
       const k = ymd(d);
-      const occ = map.get(k) || [];
+      const hol = holidayName(k);
+      const timed = inWeek.filter(o => !isBar(o) && ymd(o.start) === k);
+      // 帯で使っていない行に、時間ありの予定を入れる
+      const free = Math.max(1, CELL_ROWS - shown);
+      const more = hiddenBars[i] + Math.max(0, timed.length - free);
       const dow = d.getDay();
-      const cls = [d.getMonth() % 2 ? 'odd' : '', k === todayKey ? 'today' : '', dow === 0 ? 'sun' : dow === 6 ? 'sat' : '',
+      const cls = [d.getMonth() % 2 ? 'odd' : '', k === todayKey ? 'today' : '', dow === 0 ? 'sun' : dow === 6 ? 'sat' : '', hol ? 'hol' : '',
         d.getDate() <= 7 ? 'mtop' : '', d.getDate() === 1 ? 'mfirst' : ''].join(' ');
       html += `<div class="day ${cls}" data-act="day" data-day="${k}" data-ym="${d.getFullYear()}年${d.getMonth() + 1}月">
-        <div class="dn">${d.getDate() === 1 ? `<b>${d.getMonth() + 1}月</b>` : ''}<span>${d.getDate()}</span></div>
-        ${occ.slice(0, 3).map(o => `<div class="ev c-${o.ev.color || 'blue'} ${o.ev.allDay ? 'ad' : ''}">${o.ev.allDay ? '' : `<i>${hm(o.start)}</i>`}${esc(o.ev.title)}</div>`).join('')}
-        ${occ.length > 3 ? `<div class="more">+${occ.length - 3}</div>` : ''}
+        <div class="dn">${d.getDate() === 1 ? `<b>${d.getMonth() + 1}月</b>` : ''}<span>${d.getDate()}</span>${hol ? `<em>${hol}</em>` : ''}</div>
+        <div class="bar-space"></div>
+        ${timed.slice(0, free).map(o => `<div class="ev" ${cs(o.ev)}><i>${hm(o.start)}</i>${esc(o.ev.title)}</div>`).join('')}
+        ${more ? `<div class="more">+${more}</div>` : ''}
       </div>`;
     }
-    html += '</div>';
+    html += `<div class="bars" aria-hidden="true">${bars.filter(b => b.lane < shown).map(b => {
+      const contL = b.o.start < ws, contR = lastDayOf(b.o) >= we;
+      return `<div class="bar ${b.o.ev.allDay ? 'ad' : 'tm'} ${contL ? 'cl' : ''} ${contR ? 'cr' : ''}"
+        style="grid-column:${b.c0 + 1}/${b.c1 + 2};grid-row:${b.lane + 1};--c:${S.eventColor(b.o.ev)}">${b.o.ev.allDay ? '' : `<i>${hm(b.o.start)}</i>`}${esc(b.o.ev.title)}</div>`;
+    }).join('')}</div></div>`;
   }
   return html;
 }
@@ -500,9 +572,9 @@ function openDay(k) {
   const conflicts = S.conflictKeys(occs);
   const pay = occs.filter(o => S.isWork(o.ev)).reduce((a, o) => a + S.shiftPay(o).pay, 0);
   const m = modal(`
-    <div class="mhead"><h2>${d.getFullYear()}年 ${U.fmtDate(d)}</h2><button type="button" class="icon" data-close>×</button></div>
+    <div class="mhead"><h2>${d.getFullYear()}年 ${U.fmtDate(d)}${holidayName(k) ? ` <span class="hol-name">${holidayName(k)}</span>` : ''}</h2><button type="button" class="icon" data-close>×</button></div>
     <ul class="plist">${occs.map(o => `
-      <li class="pe c-${o.ev.color || 'blue'}" data-act="edit-event" data-id="${o.ev.id}" data-occ="${k}">
+      <li class="pe ${o.ev.allDay ? 'ad' : ''}" ${cs(o.ev)} data-act="edit-event" data-id="${o.ev.id}" data-occ="${k}">
         <span class="time">${evTime(o)}</span><span class="t">${esc(o.ev.title)}${o.ev.location ? `<small class="loc"> @${esc(o.ev.location)}</small>` : ''}</span>
         ${conflicts.has(o.key) ? '<span class="chip over">重複</span>' : ''}
       </li>`).join('') || '<p class="empty">予定はありません</p>'}</ul>
@@ -702,6 +774,8 @@ function renderSettings() {
       <label class="check"><input type="checkbox" name="nightPremium" ${s.nightPremium ? 'checked' : ''}> 深夜割増（22時〜5時 25%）を計算する</label>
     </form>
 
+    ${tagsCard()}
+
     <section class="card">
       <h3>通知</h3>
       <p class="muted small">状態: ${{ granted: '許可済み', denied: '拒否（端末の設定から許可してください）', default: '未設定', unsupported: 'この環境では未対応（iPhoneはホーム画面に追加したアプリから許可）' }[perm]}</p>
@@ -749,6 +823,7 @@ function renderSettings() {
     if (e.target.name === 'weekStart') cal = null;
     S.save();
   });
+  bindTagsCard();
   $('.alarms').addEventListener('change', e => {
     const li = e.target.closest('li');
     const a = s.alarms.find(x => x.id === li.dataset.id);
@@ -765,6 +840,57 @@ function renderSettings() {
       const ok = await choose('現在のデータを読み込んだデータで置き換えますか？<br><small>今のデータは置き換える前にバックアップします。</small>', [['y', '置き換える', 'danger']]);
       if (ok) { await beforeReplace('before-import'); S.replaceAll(data); toast('読み込みました'); }
     } catch { toast('読み込めませんでした'); }
+  });
+}
+
+/* ---------- タグ ---------- */
+function tagsCard() {
+  const count = name => state.events.filter(e => e.tags?.includes(name)).length;
+  const row = (name, color, registered) => `
+    <li data-tag="${esc(name)}">
+      <button class="swatch" data-act="tag-color" data-v="${esc(name)}" style="--c:${color || S.DEFAULT_COLOR}" aria-label="色を変える"></button>
+      <input value="${esc(name)}" data-tag-name="${esc(name)}" ${registered ? '' : 'disabled'}>
+      <small>${count(name)}件${name === state.settings.workTag ? '・バイト' : ''}${registered ? '' : '・色未設定'}</small>
+      <button class="icon danger" data-act="tag-del" data-v="${esc(name)}" aria-label="削除">削除</button>
+    </li>`;
+  return `
+    <section class="card">
+      <h3>タグと色</h3>
+      <p class="muted small">予定の色はタグで決まります（タグが複数なら上にあるタグの色）。色の丸を押すと色を変えられます。</p>
+      <ul class="tagedit">${S.tagList().map(t => row(t.name, t.color, true)).join('')}${S.unregisteredTags().map(n => row(n, null, false)).join('')}</ul>
+      <form class="quick" id="newTag"><input name="n" placeholder="新しいタグ（例: 学校, 部活, 試験）" autocomplete="off"><button class="primary">追加</button></form>
+    </section>`;
+}
+
+function pickColor(name) {
+  const cur = S.tagColor(name);
+  const m = modal(`<div class="mhead"><h2>「${esc(name)}」の色</h2><button type="button" class="icon" data-close>×</button></div>
+    <div class="palette">${S.PALETTE.map(([c, l]) => `<button type="button" class="swatch big ${c === cur ? 'on' : ''}" data-c="${c}" style="--c:${c}" title="${l}"><span>${l}</span></button>`).join('')}</div>`);
+  m.el.addEventListener('click', e => {
+    const c = e.target.closest('[data-c]')?.dataset.c;
+    if (!c) return;
+    const t = S.tagList().find(x => x.name === name);
+    if (t) t.color = c; else (state.settings.tags ||= []).push({ name, color: c });
+    S.save();
+    m.close();
+  });
+}
+
+function bindTagsCard() {
+  $('.tagedit')?.addEventListener('change', e => {
+    const from = e.target.dataset.tagName;
+    if (from == null) return;
+    const to = e.target.value.replace(/,/g, '').trim();
+    if (!to) { e.target.value = from; return; }
+    S.renameTag(from, to);
+  });
+  $('#newTag')?.addEventListener('submit', e => {
+    e.preventDefault();
+    const n = e.target.n.value.replace(/,/g, '').trim();
+    if (!n) return;
+    if (S.tagColor(n)) return toast('同じ名前のタグがあります');
+    S.registerTags([n]);
+    S.save();
   });
 }
 
@@ -855,7 +981,7 @@ function clearPushBadge() {
 }
 
 function updateBadge() {
-  const n = (state.meta.badge || 0) + state.inbox.length;
+  const n = (state.meta.badge || 0) + state.inbox.length + S.claudeAdded().length;
   if (!navigator.setAppBadge) return;
   (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
 }
@@ -896,7 +1022,7 @@ function render() {
   document.body.dataset.view = view;
   VIEWS[view]();
   if (S.saveError) toast('この端末に保存できませんでした（容量不足の可能性）。同期は続けています');
-  $('#navBadge').textContent = state.inbox.length || '';
+  $('#navBadge').textContent = (state.inbox.length + S.claudeAdded().length) || '';
   updateBadge();
 }
 
@@ -929,6 +1055,15 @@ document.addEventListener('click', async e => {
     case 'day': openDay(day); break;
     case 'approve': S.approveInbox(id); toast('追加しました'); break;
     case 'reject': S.rejectInbox(id); break;
+    case 'seen': S.markSeen([id]); break;
+    case 'seen-all': S.markSeen(); toast('すべて確認済みにしました'); break;
+    case 'tag-color': pickColor(v); break;
+    case 'tag-del': {
+      const n = state.events.filter(x => x.tags?.includes(v)).length;
+      const ok = await choose(`タグ「${esc(v)}」を削除しますか？${n ? `<br><small>付いている予定 ${n}件からも外します（予定は消えません）。</small>` : ''}`, [['y', '削除', 'danger']]);
+      if (ok) S.deleteTag(v);
+      break;
+    }
     case 'check-ok': state.meta.checkDone = ymd(new Date()); S.save(); toast('今日の確認を記録しました'); break;
     case 'pt': {
       const base = pathTarget || startOfDay(new Date());
