@@ -171,11 +171,13 @@ function openEventForm(ev, { date, occDate } = {}) {
   });
   $('[data-del]', f)?.addEventListener('click', async () => {
     const rep = ev.repeat?.freq && ev.repeat.freq !== 'none';
+    const day = occDate || ev.start.slice(0, 10);
     const v = rep
-      ? await choose('この繰り返し予定を削除します', [['one', 'この日の予定のみ', 'danger'], ['all', 'すべての繰り返し', 'danger']])
+      ? await choose(`この繰り返し予定（${U.fmtDate(parse(day))}の回）を削除します`, [['one', 'この日の予定のみ', 'danger'], ['after', 'この日以降すべて', 'danger'], ['all', 'すべての繰り返し', 'danger']])
       : await choose(`「${esc(ev.title)}」を削除しますか？`, [['all', '削除', 'danger']]);
     if (!v) return;
-    S.deleteEvent(ev.id, v === 'one' ? (occDate || ev.start.slice(0, 10)) : null);
+    if (v === 'after') S.deleteEventFrom(ev.id, day);
+    else S.deleteEvent(ev.id, v === 'one' ? day : null);
     m.close();
   });
   $('[data-mk-todo]', f)?.addEventListener('click', () => {

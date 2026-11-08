@@ -166,6 +166,16 @@ export function deleteEvent(id, onlyDate) {
   else state.events = state.events.filter(e => e.id !== id);
   save();
 }
+// 繰り返し予定を date（YYYY-MM-DD）の回から先だけ消す。最初の回からなら全部消す
+export function deleteEventFrom(id, date) {
+  const ev = state.events.find(e => e.id === id);
+  if (!ev) return;
+  if (!isRepeating(ev.repeat) || date <= ev.start.slice(0, 10)) return deleteEvent(id);
+  ev.repeat = { ...ev.repeat, until: ymd(addDays(parse(date), -1)) };
+  ev.exdates = (ev.exdates || []).filter(d => d < date);
+  ev.updatedAt = new Date().toISOString();
+  save();
+}
 
 export const isWork = ev => (ev.tags || []).includes(state.settings.workTag);
 

@@ -47,5 +47,34 @@ create extension if not exists pg_cron;
 select cron.unschedule('daily-backup') where exists (select 1 from cron.job where jobname = 'daily-backup');
 select cron.schedule('daily-backup', '0 19 * * *', $$ select public.make_backups() $$);
 
+-- PC への週 1 回の自動バックアップ用。PC に置いた鍵の SHA-256 を登録しておき、その鍵でだけ中身を読み出せる
+create table if not exists public.export_tokens (
+  token_hash text primary key,
+  user_id    uuid not null default auth.uid() references auth.users on delete cascade,
+  label      text,
+  created_at timestamptz not null default now(),
+  last_used  timestamptz
+);
+alter table public.export_tokens enable row level security;
+grant select, insert, delete on public.export_tokens to authenticated;
+drop policy if exists "own tokens" on public.export_tokens;
+create policy "own tokens" on public.export_tokens
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- 鍵が合えば、その人の予定・todo などを（消したものは除いて）返す
+create or replace function public.export_items(token text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare uid uuid;
+begin
+  update public.export_tokens set last_used = now()
+   where token_hash = encode(sha256(convert_to(token, 'UTF8')), 'hex')
+  returning user_id into uid;
+  if uid is null then raise exception 'invalid token'; end if;
+  return (select coalesce(jsonb_agg(jsonb_build_object('kind', kind, 'id', id, 'data', data, 'updated_at', updated_at)), '[]'::jsonb)
+            from public.items where user_id = uid and not deleted);
+end $$;
+revoke all on function public.export_items(text) from public;
+grant execute on function public.export_items(text) to anon, authenticated;
+
 -- 最初の 1 回分をすぐに作る
 select public.make_backups();
