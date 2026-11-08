@@ -3,7 +3,7 @@
   python backup_pc.py           バックアップを作る
   python backup_pc.py --setup   最初の 1 回だけ。鍵を作って backup-key.secret に保存し、登録用の値（SHA-256）を表示する
 
-保存先はこのファイルと同じフォルダ。出力はアプリの「設定 → バックアップ → 読み込み」でそのまま戻せる JSON と、
+保存先はリポジトリ直下の backup フォルダ。出力はアプリの「設定 → バックアップ → 読み込み」でそのまま戻せる JSON と、
 人が読むための一覧（.md）。繰り返しの予定・todo は基準の 1 件（繰り返しの規則つき）として保存される。
 """
 import datetime, hashlib, json, pathlib, secrets, sys, urllib.request
@@ -13,7 +13,9 @@ SUPABASE_URL = 'https://jqdwdnwamgvjigrxvndr.supabase.co'
 ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxZHdkbndhbWd2amlncnh2bmRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMzNzg5NjAsImV4cCI6MjEwODk1NDk2MH0.YNu8-xxRgRnMdOOmKj9_B8816t24boIQxgkFFCdiF0U'
 KEEP = 26                      # 残す週数（約半年）
 
-DIR = pathlib.Path(__file__).resolve().parent
+# 保存先はリポジトリ直下の backup/（.gitignore 済み。個人のデータなので GitHub には送らない）
+DIR = pathlib.Path(__file__).resolve().parent.parent / 'backup'
+DIR.mkdir(exist_ok=True)
 KEY_FILE = DIR / 'backup-key.secret'
 LOG = DIR / 'backup.log'
 FREQ = {'day': '日', 'week': '週', 'month': 'か月', 'year': '年'}

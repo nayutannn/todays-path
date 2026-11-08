@@ -39,6 +39,6 @@ await TP.sync()
 
 ## 開発メモ
 - ビルドなしの ES modules。ローカル確認は `python -m http.server 8765`（`.claude/launch.json` の `todays-path`）
-- PC 上の本体は `C:/Users/Osaka/todays-path`、週1の自動バックアップは `C:/Users/Osaka/TodaysPath/Backup`（タスク スケジューラ「TodaysPath 週1バックアップ」、日曜21時）。OneDrive は使わない
+- PC 上の本体は `C:/Users/Osaka/todays-path`、週1の自動バックアップは同じフォルダの `backup/`（`tools/backup_pc.py` が保存。個人データなので .gitignore 済み）（タスク スケジューラ「TodaysPath 週1バックアップ」、日曜21時）。OneDrive は使わない
 - データは `js/store.js`、Supabase 同期は `js/sync.js`、通知は `js/push.js` と `supabase/functions/send-push`
 - `vapid.secret` は秘密鍵。読まない・表示しない・コミットしない
