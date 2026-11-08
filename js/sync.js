@@ -93,7 +93,10 @@ async function push() {
   for (const key in snap.items) {
     if (local.has(key)) continue;
     const [kind, id] = splitKey(key);
-    rows.push({ user_id: user.id, kind, id, data: {}, deleted: true, updated_at: now });
+    // 消した項目も中身は残しておく（バックアップから戻せるように）
+    let last = {};
+    try { last = JSON.parse(snap.items[key]); } catch {}
+    rows.push({ user_id: user.id, kind, id, data: last, deleted: true, updated_at: now });
   }
   for (let i = 0; i < rows.length; i += 500) {
     const chunk = rows.slice(i, i + 500);
@@ -120,6 +123,13 @@ async function pull() {
   }
 }
 
+// 予定・todo がサーバーにはあるのに端末では 1 件も無い＝端末のデータが失われた可能性が高い。
+// そのまま送ると全部「削除」としてサーバーに伝わるので、送らずにサーバーから全部取り直す
+function localLost() {
+  const known = Object.keys(snap.items).filter(k => k.startsWith('event:') || k.startsWith('todo:')).length;
+  return known >= 3 && !state.events.length && !state.todos.length;
+}
+
 async function sync() {
   if (!user) return;
   if (busy) { again = true; return; }
@@ -127,6 +137,7 @@ async function sync() {
   setStatus('syncing', { lastSync: status.lastSync });
   try {
     // 初回はサーバーの内容を先に取り込んでから、端末にしかない項目を送る
+    if (localLost()) { snap = { items: {}, lastPull: null, userId: user.id }; storeSnap(); }
     if (!snap.lastPull) { await pull(); await push(); }
     else { await push(); await pull(); }
     setStatus('ok', { lastSync: new Date() });
@@ -160,6 +171,35 @@ function onSession(session) {
   if (snap.userId !== user.id) { snap = { items: {}, lastPull: null, userId: user.id }; storeSnap(); }
   startRealtime();
   sync();
+}
+
+/* ---------- サーバー上のバックアップ（毎日自動で保存。supabase/backup.sql） ---------- */
+export async function listBackups() {
+  if (!user) return [];
+  const { data, error } = await sb.from('backups').select('id, kind, count, created_at').order('created_at', { ascending: false }).limit(60);
+  if (error) throw error;
+  return data;
+}
+export async function backupNow() {
+  if (!user) throw new Error('ログインしていません');
+  await sync();
+  const { error } = await sb.rpc('backup_now');
+  if (error) throw error;
+}
+// バックアップの行（items と同じ形）からアプリのデータを組み立てる
+export async function loadBackup(id) {
+  const { data, error } = await sb.from('backups').select('items').eq('id', id).single();
+  if (error) throw error;
+  const rows = (data.items || []).filter(r => !r.deleted);
+  const pick = kind => rows.filter(r => r.kind === kind).map(r => r.data);
+  const setting = id => rows.find(r => r.kind === 'settings' && r.id === id)?.data;
+  return {
+    version: 1,
+    tabs: pick('tab').sort((a, b) => (a.pos ?? 0) - (b.pos ?? 0)),
+    todos: pick('todo'), events: pick('event'), inbox: pick('inbox'),
+    settings: setting('main') || {},
+    meta: { checkDone: setting('meta')?.checkDone || '' },
+  };
 }
 
 const MESSAGES = {

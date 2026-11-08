@@ -308,3 +308,10 @@ h1 { font-size: 24px; margin: 0; letter-spacing: .01em; }
 .tl-ev { line-height: 1.3; }
 .tl-ev.short b { flex: 0 1 auto; min-width: 3em; }
 .tl-ev.short small { flex: 0 100 auto; min-width: 0; }
+
+/* バックアップ */
+.card h4 { margin: 14px 0 6px; font-size: 13px; font-weight: 600; }
+.backups { list-style: none; margin: 0 0 8px; padding: 0; }
+.backups li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.backups li:first-child { border-top: 0; }
+.backups small { color: var(--muted); flex: 1; }

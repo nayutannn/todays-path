@@ -3,6 +3,7 @@ import * as S from './store.js';
 import * as Sync from './sync.js';
 import * as Push from './push.js';
 import './claude.js';
+import * as Backup from './backup.js';
 
 const { state } = S;
 const { esc, ymd, hm, parse, addDays, startOfDay } = U;
@@ -716,11 +717,7 @@ function renderSettings() {
       <button data-act="alarm-add">＋ 通知を追加</button>
     </section>
 
-    <section class="card">
-      <h3>データ</h3>
-      <p class="muted small">念のためのバックアップや、別のアカウントへの移行に使えます。</p>
-      <div class="actions"><button data-act="export">書き出し(JSON)</button><label class="btn">読み込み<input type="file" accept="application/json" id="importFile" hidden></label></div>
-    </section>`;
+    ${backupCard()}`;
 
   $('#authForm')?.addEventListener('submit', async e => {
     e.preventDefault();
@@ -763,8 +760,8 @@ function renderSettings() {
     if (!file) return;
     try {
       const data = JSON.parse(await file.text());
-      const ok = await choose('現在のデータを読み込んだデータで置き換えますか？', [['y', '置き換える', 'danger']]);
-      if (ok) { S.replaceAll(data); toast('読み込みました'); }
+      const ok = await choose('現在のデータを読み込んだデータで置き換えますか？<br><small>今のデータは置き換える前にバックアップします。</small>', [['y', '置き換える', 'danger']]);
+      if (ok) { await beforeReplace('before-import'); S.replaceAll(data); toast('読み込みました'); }
     } catch { toast('読み込めませんでした'); }
   });
 }
@@ -777,6 +774,49 @@ function pushRow() {
   return `
     <p class="muted small">今はアプリを開いている間だけ通知します。閉じていても届くようにするには、ログインしてから下のボタンを押してください。</p>
     <button data-act="push-on" class="primary">閉じていても通知を受け取る</button>`;
+}
+
+/* ---------- バックアップ ---------- */
+let serverBackups = null;   // null: まだ取得していない / 配列 / { error }
+async function loadServerBackups() {
+  try { serverBackups = await Sync.listBackups(); } catch (e) { serverBackups = { error: e.message || String(e) }; }
+  if (view === 'settings') renderSettings();
+}
+const KIND = { auto: '自動', manual: '手動', daily: '自動', 'before-import': '読み込み前', 'before-restore': '復元前' };
+const when = iso => { const d = new Date(iso); return `${U.fmtDate(d)} ${hm(d)}`; };
+
+function backupCard() {
+  const u = Sync.currentUser();
+  if (u && serverBackups === null) { serverBackups = []; loadServerBackups(); }
+  const server = !u ? '<p class="muted small">ログインすると、サーバーに毎日自動で保存されます。</p>'
+    : serverBackups?.error ? `<p class="small danger">取得できませんでした: ${esc(serverBackups.error)}</p>`
+    : serverBackups.length ? `<ul class="backups">${serverBackups.slice(0, 14).map(b => `
+        <li><span>${when(b.created_at)}</span><small>${KIND[b.kind] || b.kind}・${b.count}件</small>
+          <button class="small" data-act="restore-server" data-id="${b.id}">この時点に戻す</button></li>`).join('')}</ul>`
+    : '<p class="muted small">まだありません</p>';
+  const local = Backup.list();
+  return `
+    <section class="card">
+      <h3>バックアップ</h3>
+      <p class="muted small">間違えて消したときや同期の不具合のときに、前の状態へ戻せます。戻す前の状態も自動で保存されるので、戻したあとでも元に戻せます。</p>
+      <h4>サーバー（毎日4時に自動・60日分）</h4>
+      ${server}
+      ${u ? '<button data-act="backup-now">今すぐバックアップ</button>' : ''}
+      <h4>この端末（1日1回自動・7日分）</h4>
+      ${local.length ? `<ul class="backups">${local.map(b => `
+        <li><span>${when(b.at)}</span><small>${KIND[b.reason] || b.reason}・予定${b.events} todo${b.todos}</small>
+          <button class="small" data-act="restore-local" data-id="${b.at}">この時点に戻す</button></li>`).join('')}</ul>`
+        : '<p class="muted small">まだありません</p>'}
+      <h4>ファイル</h4>
+      <p class="muted small">月に1回ほど書き出して、iCloud Drive などに保存しておくと一番安心です。</p>
+      <div class="actions"><button data-act="export">書き出し(JSON)</button><label class="btn">読み込み<input type="file" accept="application/json" id="importFile" hidden></label></div>
+    </section>`;
+}
+
+// データを置き換える直前に、端末とサーバーの両方へ今の状態を残す
+async function beforeReplace(reason) {
+  Backup.snapshot(reason);
+  if (Sync.currentUser()) await Sync.backupNow().catch(() => {});
 }
 
 function syncCard() {
@@ -853,6 +893,7 @@ function render() {
   $$('.nav [data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === view));
   document.body.dataset.view = view;
   VIEWS[view]();
+  if (S.saveError) toast('この端末に保存できませんでした（容量不足の可能性）。同期は続けています');
   $('#navBadge').textContent = state.inbox.length || '';
   updateBadge();
 }
@@ -927,6 +968,30 @@ document.addEventListener('click', async e => {
     }
     case 'alarm-add': state.settings.alarms.push({ id: U.uid('al'), label: '', time: '08:00', days: [1, 2, 3, 4, 5], on: true }); S.save(); break;
     case 'alarm-del': state.settings.alarms = state.settings.alarms.filter(x => x.id !== id); S.save(); break;
+    case 'backup-now': {
+      a.disabled = true;
+      try { await Sync.backupNow(); toast('バックアップしました'); } catch (err) { toast(`バックアップできませんでした: ${err.message}`); }
+      await loadServerBackups();
+      break;
+    }
+    case 'restore-server': case 'restore-local': {
+      const ok = await choose('この時点のデータに戻しますか？<br><small>今のデータは戻す前にバックアップします。</small>', [['y', '戻す', 'danger']]);
+      if (!ok) break;
+      try {
+        if (act === 'restore-local') {
+          if (Sync.currentUser()) await Sync.backupNow().catch(() => {});
+          Backup.restore(id);   // 端末側の「復元前」はこの中で保存される
+        }
+        else {
+          const data = await Sync.loadBackup(+id);
+          await beforeReplace('before-restore');
+          S.replaceAll({ ...data, meta: { ...state.meta, checkDone: data.meta.checkDone } });
+        }
+        toast('戻しました');
+        if (Sync.currentUser()) loadServerBackups();
+      } catch (err) { toast(`戻せませんでした: ${err.message}`); }
+      break;
+    }
     case 'export': {
       const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
       const link = document.createElement('a');
@@ -953,6 +1018,7 @@ Sync.onStatus(() => {
   if (view === 'settings' && !document.activeElement?.closest('#authForm')) renderSettings();
 });
 Sync.initSync();
+Backup.initBackup();
 Push.initPush().then(() => view === 'settings' && renderSettings());
 window.addEventListener('hashchange', () => { readHash(); render(); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { clearPushBadge(); tick(); if (view === 'path') renderPath(); } });

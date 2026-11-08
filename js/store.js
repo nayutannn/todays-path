@@ -38,12 +38,19 @@ function migrate(s) {
   return s;
 }
 function load() {
-  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s) return migrate(s); } catch { /* 壊れていたら初期化 */ }
+  const raw = localStorage.getItem(KEY);
+  try { const s = JSON.parse(raw); if (s) return migrate(s); }
+  catch {
+    // 読めないデータでも上書きで消さないよう、別の場所に残してから初期化する
+    try { localStorage.setItem(`${KEY}-broken-${Date.now()}`, raw); } catch { /* 容量不足なら諦める */ }
+  }
   return fresh();
 }
+export let saveError = null;   // 端末への保存に失敗したとき（容量不足など）の内容。画面で知らせる
 export function save() {
   state.meta.updatedAt = new Date().toISOString();
-  localStorage.setItem(KEY, JSON.stringify(state));
+  try { localStorage.setItem(KEY, JSON.stringify(state)); saveError = null; }
+  catch (e) { saveError = e; }
   listeners.forEach(f => f());
 }
 export const subscribe = f => { listeners.add(f); return () => listeners.delete(f); };
