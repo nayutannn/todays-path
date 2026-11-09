@@ -33,14 +33,14 @@ export function eventColor(ev) {
   for (const t of ev.tags || []) { const c = tagColor(t); if (c) return c; }
   return DEFAULT_COLOR;
 }
-// まだ登録されていないタグを、使われていない色で登録する
-export function registerTags(names) {
+// まだ登録されていないタグを登録する。色は colors[名前]（ユーザーが選んだ色）、無ければ使われていない色
+export function registerTags(names, colors = {}) {
   const list = state.settings.tags ||= [];
   let added = false;
   for (const name of names || []) {
     if (!name || list.some(t => t.name === name)) continue;
     const used = new Set(list.map(t => t.color));
-    list.push({ name, color: (PALETTE.find(([c]) => !used.has(c)) || PALETTE[17])[0] });
+    list.push({ name, color: colors[name] || (PALETTE.find(([c]) => !used.has(c)) || PALETTE[17])[0] });
     added = true;
   }
   return added;

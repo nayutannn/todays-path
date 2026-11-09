@@ -1,5 +1,5 @@
 // オフラインでも開けるようにアプリ本体をキャッシュ（通信できる時は常に最新を取得）
-const CACHE = 'todays-path-v8';
+const CACHE = 'todays-path-v9';
 const META = 'todays-path-meta';   // バッジの数など、アプリ本体以外の小さな記録
 const SHELL = ['./', 'index.html', 'css/style.css', 'js/app.js', 'js/store.js', 'js/util.js', 'js/sync.js', 'js/push.js', 'js/claude.js', 'js/backup.js', 'js/holidays.js', 'js/config.js', 'manifest.webmanifest', 'icons/icon-192.png'];
 

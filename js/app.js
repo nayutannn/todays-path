@@ -48,7 +48,8 @@ function modal(html) {
   back.innerHTML = `<div class="modal" role="dialog">${html}</div>`;
   document.body.append(back);
   const close = () => { back.remove(); document.removeEventListener('keydown', onKey); };
-  const onKey = e => { if (e.key === 'Escape') close(); };
+  // Esc は一番上の画面だけ閉じる（予定の編集の上に色選びを開いているときなど）
+  const onKey = e => { if (e.key === 'Escape' && back === [...document.querySelectorAll('.modal-back')].pop()) close(); };
   document.addEventListener('keydown', onKey);
   back.addEventListener('click', e => { if (e.target === back || e.target.closest('[data-close]')) close(); });
   return { el: back.firstElementChild, close };
@@ -174,14 +175,20 @@ function openEventForm(ev, { date, occDate } = {}) {
   });
   // 新しいタグ: 入力して Enter（または欄から離れる）で、選んだ状態のタグとして足す
   const nt = $('.newtag', pick);
-  const addNew = () => {
+  const newColors = {};      // この画面で作った新しいタグの色（保存するときに登録する）
+  const addNew = async () => {
     const name = nt.value.replace(/,/g, '').trim();
     nt.value = '';
     if (!name) return;
     if (!readTags().includes(name)) f.tags.value = [...readTags(), name].join(',');
     const old = $$('[data-tag]', pick).find(b => b.dataset.tag === name);
-    if (old) old.classList.add('on'); else nt.insertAdjacentHTML('beforebegin', tagChip(name, true));
+    if (old) { old.classList.add('on'); sync(); return; }
+    nt.insertAdjacentHTML('beforebegin', tagChip(name, true));
     sync();
+    if (S.tagColor(name)) return;
+    const c = await chooseColor(name, nextColor());      // 新しいタグはその場で色を選ぶ
+    newColors[name] = c || nextColor();
+    $$('[data-tag]', pick).find(b => b.dataset.tag === name)?.style.setProperty('--c', newColors[name]);
   };
   nt.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addNew(); } });
   nt.addEventListener('change', addNew);
@@ -209,7 +216,7 @@ function openEventForm(ev, { date, occDate } = {}) {
       if (!ok) return;
     }
     delete draft.color;      // 色はタグで決まる（以前の色の指定は使わない）
-    S.registerTags(draft.tags);
+    S.registerTags(draft.tags, newColors);
     S.upsertEvent(draft);
     m.close();
     toast('予定を保存しました');
@@ -621,8 +628,8 @@ function sortTodos(list) {
 function todoRow(t, { drag } = {}) {
   const meta = [];
   if (t.due) { const r = U.relDue(parse(t.due)); meta.push(`<span class="chip ${r.level}">期限 ${r.text}</span>`); }
-  if (t.doDate) meta.push(`<span class="chip">やる日 ${U.fmtDate(parse(t.doDate))}</span>`);
-  if (t.repeat?.freq && t.repeat.freq !== 'none') meta.push(`<span class="chip">↻ ${t.repeat.interval > 1 ? t.repeat.interval : ''}${S.FREQ_LABEL[t.repeat.freq]}ごと</span>`);
+  if (t.doDate) meta.push(`<span class="chip dt">やる日 ${U.fmtDate(parse(t.doDate))}</span>`);
+  if (t.repeat?.freq && t.repeat.freq !== 'none') meta.push(`<span class="chip dt">↻ ${t.repeat.interval > 1 ? t.repeat.interval : ''}${S.FREQ_LABEL[t.repeat.freq]}ごと</span>`);
   if (t.longLead) meta.push('<span class="chip long">長期</span>');
   if (t.reminders?.length) meta.push('<span class="chip">🔔</span>');
   if (t.memo) meta.push('<span class="chip">メモ</span>');
@@ -875,24 +882,46 @@ function tagsCard() {
   return `
     <section class="card">
       <h3>タグと色</h3>
-      <p class="muted small">予定の色はタグで決まります（タグが複数なら上にあるタグの色）。色の丸を押すと色を変えられます。</p>
+      <p class="muted small">予定の色はタグで決まります（タグが複数なら上にあるタグの色）。色の丸を押すと、一覧から選ぶか自由に色を決められます（あとからいつでも変更できます）。</p>
       <ul class="tagedit">${S.tagList().map(t => row(t.name, t.color, true)).join('')}${S.unregisteredTags().map(n => row(n, null, false)).join('')}</ul>
       <form class="quick" id="newTag"><input name="n" placeholder="新しいタグ（例: 学校, 部活, 試験）" autocomplete="off"><button class="primary">追加</button></form>
     </section>`;
 }
 
-function pickColor(name) {
-  const cur = S.tagColor(name);
-  const m = modal(`<div class="mhead"><h2>「${esc(name)}」の色</h2><button type="button" class="icon" data-close>×</button></div>
-    <div class="palette">${S.PALETTE.map(([c, l]) => `<button type="button" class="swatch big ${c === cur ? 'on' : ''}" data-c="${c}" style="--c:${c}" title="${l}"><span>${l}</span></button>`).join('')}</div>`);
-  m.el.addEventListener('click', e => {
-    const c = e.target.closest('[data-c]')?.dataset.c;
-    if (!c) return;
-    const t = S.tagList().find(x => x.name === name);
-    if (t) t.color = c; else (state.settings.tags ||= []).push({ name, color: c });
-    S.save();
-    m.close();
+// 新しいタグにおすすめする色（まだどのタグも使っていない色）
+const nextColor = () => (S.PALETTE.find(([c]) => !S.tagList().some(t => t.color === c)) || S.PALETTE[17])[0];
+// 色を選ぶ画面（一覧から選ぶ・自由に選ぶ）。選んだ色を返す（閉じたら null）
+function chooseColor(name, cur) {
+  return new Promise(resolve => {
+    cur = (cur || S.DEFAULT_COLOR).toLowerCase();
+    const m = modal(`<div class="mhead"><h2>「${esc(name)}」の色</h2><button type="button" class="icon" data-close>×</button></div>
+      <div class="palette">${S.PALETTE.map(([c, l]) => `<button type="button" class="swatch big ${c === cur ? 'on' : ''}" data-c="${c}" style="--c:${c}" title="${l}"><span>${l}</span></button>`).join('')}</div>
+      <div class="customcolor">
+        <label>自由に選ぶ <input type="color" value="${cur}"></label>
+        <span class="tchip on preview" style="--c:${cur}">${esc(name)}</span>
+        <span class="sp"></span><button type="button" class="primary" data-ok>この色にする</button>
+      </div>`);
+    let done = false;
+    const finish = c => { if (done) return; done = true; m.close(); resolve(c); };
+    const inp = $('input[type=color]', m.el), pv = $('.preview', m.el);
+    inp.addEventListener('input', () => pv.style.setProperty('--c', inp.value));
+    m.el.addEventListener('click', e => {
+      const c = e.target.closest('[data-c]')?.dataset.c;
+      if (c) return finish(c);
+      if (e.target.closest('[data-ok]')) finish(inp.value);
+    });
+    // ×・背景・Esc で閉じたとき
+    new MutationObserver((_, o) => { if (!m.el.isConnected) { o.disconnect(); if (!done) { done = true; resolve(null); } } })
+      .observe(document.body, { childList: true });
   });
+}
+
+async function pickColor(name) {
+  const c = await chooseColor(name, S.tagColor(name));
+  if (!c) return;
+  const t = S.tagList().find(x => x.name === name);
+  if (t) t.color = c; else (state.settings.tags ||= []).push({ name, color: c });
+  S.save();
 }
 
 function bindTagsCard() {
@@ -908,8 +937,11 @@ function bindTagsCard() {
     const n = e.target.n.value.replace(/,/g, '').trim();
     if (!n) return;
     if (S.tagColor(n)) return toast('同じ名前のタグがあります');
-    S.registerTags([n]);
-    S.save();
+    chooseColor(n, nextColor()).then(c => {
+      if (!c) return;
+      S.registerTags([n], { [n]: c });
+      S.save();
+    });
   });
 }
 
