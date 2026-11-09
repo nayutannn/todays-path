@@ -104,8 +104,9 @@ h1 { font-size: 24px; margin: 0; letter-spacing: .01em; }
 .customcolor label { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .customcolor input[type=color] { width: 46px; height: 34px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); cursor: pointer; }
 .customcolor .sp { flex: 1; }
-/* todo の期限・やる日・繰り返し（期限が近いと下の today/soon/over の色に変わる） */
-.chip.dt, .chip.wk, .chip.later { background: #e4f4dc; color: #3f8a2a; }
+/* todo の期限（緑。近いと下の today/soon/over の色に変わる）とやる日（青） */
+.chip.wk, .chip.later { background: #e4f4dc; color: #3f8a2a; }
+.chip.dodate { background: #e1ebfb; color: #2f5fc4; }
 .chip.over { background: #fbe3df; color: var(--danger); }
 .chip.today { background: #fdeed6; color: #a65d00; }
 .chip.soon { background: #fff4d6; color: var(--warn); }
@@ -113,7 +114,8 @@ h1 { font-size: 24px; margin: 0; letter-spacing: .01em; }
 .chip.along { background: var(--accent-soft); color: var(--accent); white-space: normal; }
 .chip.pay { background: #e6f2ea; color: #2f8f5b; }
 @media (prefers-color-scheme: dark) {
-  .chip.dt, .chip.wk, .chip.later { background: #24371f; color: #9bdc7f; }
+  .chip.wk, .chip.later { background: #24371f; color: #9bdc7f; }
+  .chip.dodate { background: #1f2c45; color: #8db4f5; }
   .chip.over { background: #4a2420; } .chip.today { background: #4a3720; color: #f0b56a; } .chip.soon { background: #423a20; }
   .chip.long { background: #34294a; color: #b69cf0; } .chip.pay { background: #203a2b; color: #7cd3a0; }
 }

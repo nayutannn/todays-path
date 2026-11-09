@@ -628,8 +628,8 @@ function sortTodos(list) {
 function todoRow(t, { drag } = {}) {
   const meta = [];
   if (t.due) { const r = U.relDue(parse(t.due)); meta.push(`<span class="chip ${r.level}">期限 ${r.text}</span>`); }
-  if (t.doDate) meta.push(`<span class="chip dt">やる日 ${U.fmtDate(parse(t.doDate))}</span>`);
-  if (t.repeat?.freq && t.repeat.freq !== 'none') meta.push(`<span class="chip dt">↻ ${t.repeat.interval > 1 ? t.repeat.interval : ''}${S.FREQ_LABEL[t.repeat.freq]}ごと</span>`);
+  if (t.doDate) meta.push(`<span class="chip dodate">やる日 ${U.fmtDate(parse(t.doDate))}</span>`);
+  if (t.repeat?.freq && t.repeat.freq !== 'none') meta.push(`<span class="chip">↻ ${t.repeat.interval > 1 ? t.repeat.interval : ''}${S.FREQ_LABEL[t.repeat.freq]}ごと</span>`);
   if (t.longLead) meta.push('<span class="chip long">長期</span>');
   if (t.reminders?.length) meta.push('<span class="chip">🔔</span>');
   if (t.memo) meta.push('<span class="chip">メモ</span>');
