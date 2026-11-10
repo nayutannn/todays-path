@@ -668,13 +668,13 @@ function renderTodo() {
       <button data-act="tabs-edit" title="リストを編集">＋ / 編集</button>
     </nav>
     <ul class="todos" id="todoList">${active.map(t => todoRow(t, { drag: manual })).join('') || '<p class="empty">やることはありません</p>'}</ul>
-    <form id="quickAdd" class="quick"><input name="q" placeholder="＋ やることを入力して Enter" autocomplete="off"><button class="primary">追加</button></form>
     ${waiting.length ? `<details class="fold"><summary>繰り返し待機中（${waiting.length}）</summary><ul class="todos">${waiting.map(t =>
       `<li class="todo waiting"><div class="body" data-act="edit-todo" data-id="${t.id}"><div class="t">${esc(t.title)}</div>
        <div class="meta"><span class="chip">${U.fmtDateTime(parse(t.hiddenUntil))} 以降に復活（次の期限 ${U.fmtDate(parse(t.due))}）</span></div></div></li>`).join('')}</ul></details>` : ''}
     ${done.length ? `<details class="fold" ${showDone ? 'open' : ''} id="doneFold"><summary>完了（${done.length}）</summary>
       <ul class="todos">${done.slice(0, 100).map(t => todoRow(t)).join('')}</ul>
-      <button class="link danger" data-act="clear-done">完了済みを削除</button></details>` : ''}`;
+      <button class="link danger" data-act="clear-done">完了済みを削除</button></details>` : ''}
+    <form id="quickAdd" class="quick"><input name="q" placeholder="＋ やることを入力して Enter" autocomplete="off" enterkeyhint="done"><button class="primary">追加</button></form>`;
 
   $('#todoSort').addEventListener('change', e => { state.settings.todoSort = e.target.value; S.save(); });
   $('#doneFold')?.addEventListener('toggle', e => { showDone = e.target.open; });

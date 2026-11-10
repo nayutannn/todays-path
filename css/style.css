@@ -222,7 +222,13 @@ h1 { font-size: 24px; margin: 0; letter-spacing: .01em; }
 .tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .tabs button small { opacity: .7; }
 .quick { display: flex; gap: 8px; margin-bottom: 10px; }
-#quickAdd { margin: 10px 0 14px; }
+/* ToDo 画面: 追加の欄はいつも画面の下（ナビのすぐ上）に出す */
+body[data-view="todo"] main { display: flex; flex-direction: column; padding-bottom: 0; }
+body[data-view="todo"] main > * { flex-shrink: 0; width: 100%; }
+#quickAdd {
+  position: sticky; bottom: 0; z-index: 3; margin: auto 0 0; padding: 10px 0 12px;
+  background: var(--bg); border-top: 1px solid var(--line); box-shadow: -16px 0 var(--bg), 16px 0 var(--bg);
+}
 .quick input { flex: 1; }
 .todos { list-style: none; margin: 0; padding: 0; }
 .todo { display: flex; align-items: flex-start; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; margin-bottom: 6px; }
