@@ -253,8 +253,9 @@ function openTodoForm(t, preset = {}) {
       <div class="row"><label>優先度</label><div class="seg prio">${PRIORITY.map((p, i) =>
         `<label><input type="radio" name="priority" value="${i}" ${+t.priority === i ? 'checked' : ''}><span class="p${i}">${p}</span></label>`).join('')}</div></div>
       <div class="row"><label>期限</label><span class="inline"><input type="date" name="dd" value="${dd || ''}"><span class="due-time ${dd ? '' : 'hidden'}">${timeSelect('dt', dt)}</span>
-        <button type="button" class="link" data-clear-due>${dd ? 'クリア' : ''}</button></span></div>
-      <div class="row"><label>やる日</label><input type="date" name="doDate" value="${t.doDate || ''}"></div>
+        <button type="button" class="link ${dd ? '' : 'hidden'}" data-clear="dd">クリア</button></span></div>
+      <div class="row"><label>やる日</label><span class="inline"><input type="date" name="doDate" value="${t.doDate || ''}">
+        <button type="button" class="link ${t.doDate ? '' : 'hidden'}" data-clear="doDate">クリア</button></span></div>
       <div class="repeat-box ${dd ? '' : 'hidden'}">${repeatFields(t.repeat)}</div>
       <div class="row"><label>長期タスク</label><select name="longLead">${options(LEADS, t.longLead || 0)}</select></div>
       <div class="row"><label>ついで</label><input name="context" value="${esc(t.context)}" placeholder="例: 駅前, 学校（予定と一致したら提案）" autocomplete="off"></div>
@@ -271,7 +272,14 @@ function openTodoForm(t, preset = {}) {
     $('.due-time', f).classList.toggle('hidden', !f.dd.value);
     $('.repeat-box', f).classList.toggle('hidden', !f.dd.value);
   });
-  $('[data-clear-due]', f).addEventListener('click', () => { f.dd.value = ''; f.dd.dispatchEvent(new Event('input')); });
+  // 期限・やる日の「クリア」（日付が入っているときだけ出す。iPhone の日付欄は自分で空にできないため）
+  for (const b of $$('[data-clear]', f)) {
+    const inp = f.elements[b.dataset.clear];
+    const show = () => b.classList.toggle('hidden', !inp.value);
+    inp.addEventListener('input', show);
+    inp.addEventListener('change', show);
+    b.addEventListener('click', () => { inp.value = ''; inp.dispatchEvent(new Event('input')); });
+  }
   if (isNew) setTimeout(() => f.elements.title.focus(), 50);
 
   f.addEventListener('submit', e => {
@@ -659,8 +667,8 @@ function renderTodo() {
         <small>${state.todos.filter(x => x.tabId === t.id && !x.done && S.isVisible(x, now)).length || ''}</small></button>`).join('')}
       <button data-act="tabs-edit" title="リストを編集">＋ / 編集</button>
     </nav>
-    <form id="quickAdd" class="quick"><input name="q" placeholder="＋ やることを入力して Enter" autocomplete="off"><button class="primary">追加</button></form>
     <ul class="todos" id="todoList">${active.map(t => todoRow(t, { drag: manual })).join('') || '<p class="empty">やることはありません</p>'}</ul>
+    <form id="quickAdd" class="quick"><input name="q" placeholder="＋ やることを入力して Enter" autocomplete="off"><button class="primary">追加</button></form>
     ${waiting.length ? `<details class="fold"><summary>繰り返し待機中（${waiting.length}）</summary><ul class="todos">${waiting.map(t =>
       `<li class="todo waiting"><div class="body" data-act="edit-todo" data-id="${t.id}"><div class="t">${esc(t.title)}</div>
        <div class="meta"><span class="chip">${U.fmtDateTime(parse(t.hiddenUntil))} 以降に復活（次の期限 ${U.fmtDate(parse(t.due))}）</span></div></div></li>`).join('')}</ul></details>` : ''}
@@ -674,7 +682,8 @@ function renderTodo() {
     e.preventDefault();
     const title = e.target.q.value.trim();
     if (!title) return;
-    S.upsertTodo({ title, tabId: todoTab === 'all' ? state.tabs[0].id : todoTab, order: Math.min(0, ...state.todos.map(x => x.order ?? 0)) - 1 });
+    // 入力欄がリストの下にあるので、新しい todo も手動の並びでは一番下に入れる
+    S.upsertTodo({ title, tabId: todoTab === 'all' ? state.tabs[0].id : todoTab, order: Math.max(0, ...state.todos.map(x => x.order ?? 0)) + 1 });
     $('#quickAdd input').focus();
   });
   if (manual) bindDrag($('#todoList'));
