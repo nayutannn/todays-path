@@ -120,8 +120,18 @@ function srcHtml(x) {
   return parts.length ? `<div class="srcbox">${parts.join('<hr>')}</div>` : '';
 }
 
-function openEventForm(ev, { date, occDate } = {}) {
+// コピー: 既にある予定・todo の内容だけを取り出す（id・作成日時・情報元・完了・削除した回などは引き継がない）
+const COPY_SKIP = ['id', 'createdAt', 'updatedAt', 'source', 'sourceNote', 'changeSource', 'changeNote', 'claudeNew',
+  'exdates', 'deleted', 'done', 'doneAt', 'order', 'hiddenUntil'];
+function copyOf(x) {
+  const c = structuredClone(x);
+  for (const k of COPY_SKIP) delete c[k];
+  return c;
+}
+
+function openEventForm(ev, { date, occDate, copy } = {}) {
   const isNew = !ev;
+  if (copy) ev = copyOf(copy);
   if (!ev) {
     const now = new Date();
     const st = date ? new Date(...date.split('-').map((x, i) => i === 1 ? x - 1 : +x), Math.min(now.getHours() + 1, 23))
@@ -134,7 +144,7 @@ function openEventForm(ev, { date, occDate } = {}) {
   const work = S.isWork(ev);
   const m = modal(`
     <form class="form">
-      <div class="mhead"><h2>${isNew ? '予定を追加' : '予定を編集'}</h2><button type="button" class="icon" data-close>×</button></div>
+      <div class="mhead"><h2>${copy ? '予定をコピーして追加' : isNew ? '予定を追加' : '予定を編集'}</h2><button type="button" class="icon" data-close>×</button></div>
       ${srcHtml(ev)}
       <input name="title" class="title-in" placeholder="タイトル" value="${esc(ev.title)}" required autocomplete="off">
       <label class="check"><input type="checkbox" name="allDay" ${ev.allDay ? 'checked' : ''}> 終日</label>
@@ -155,7 +165,7 @@ function openEventForm(ev, { date, occDate } = {}) {
       <div class="row top"><label>通知</label><div>${remEditor(ev.reminders)}</div></div>
       <textarea name="memo" placeholder="メモ" rows="3">${esc(ev.memo)}</textarea>
       <div class="actions">
-        ${isNew ? '' : '<button type="button" class="danger" data-del>削除</button><button type="button" data-mk-todo>todoを作成</button>'}
+        ${isNew ? '' : '<button type="button" class="danger" data-del>削除</button><button type="button" data-copy>コピー</button><button type="button" data-mk-todo>todoを作成</button>'}
         <span class="sp"></span><button class="primary">保存</button>
       </div>
     </form>`);
@@ -240,6 +250,11 @@ function openEventForm(ev, { date, occDate } = {}) {
     else S.deleteEvent(ev.id, v === 'one' ? day : null);
     m.close();
   });
+  $('[data-copy]', f)?.addEventListener('click', () => {
+    m.close();
+    openEventForm(null, { copy: ev });
+    toast('コピーしました。日時などを変えて保存してください');
+  });
   $('[data-mk-todo]', f)?.addEventListener('click', () => {
     m.close();
     openTodoForm(null, { title: `${ev.title}の準備`, doDate: (occDate || ev.start.slice(0, 10)), context: ev.location || ev.title });
@@ -247,14 +262,14 @@ function openEventForm(ev, { date, occDate } = {}) {
 }
 
 /* ================= todoフォーム ================= */
-function openTodoForm(t, preset = {}) {
+function openTodoForm(t, preset = {}, { copied = false } = {}) {
   const isNew = !t;
   t ||= { title: '', tabId: todoTab !== 'all' ? todoTab : state.tabs[0].id, due: '', doDate: '', priority: 0,
     repeat: { freq: 'none', interval: 1 }, longLead: 0, context: '', memo: '', reminders: [], ...preset };
   const [dd, dt = '23:55'] = (t.due || '').split('T');
   const m = modal(`
     <form class="form">
-      <div class="mhead"><h2>${isNew ? 'todoを追加' : 'todoを編集'}</h2><button type="button" class="icon" data-close>×</button></div>
+      <div class="mhead"><h2>${copied ? 'todoをコピーして追加' : isNew ? 'todoを追加' : 'todoを編集'}</h2><button type="button" class="icon" data-close>×</button></div>
       ${srcHtml(t)}
       <input name="title" class="title-in" placeholder="やること" value="${esc(t.title)}" required autocomplete="off">
       <div class="row"><label>リスト</label><select name="tabId">${options(state.tabs.map(x => [x.id, esc(x.name)]), t.tabId)}</select></div>
@@ -270,7 +285,7 @@ function openTodoForm(t, preset = {}) {
       <div class="row top"><label>通知<br><small>期限の</small></label><div>${remEditor(t.reminders)}</div></div>
       <textarea name="memo" placeholder="メモ・詳細" rows="4">${esc(t.memo)}</textarea>
       <div class="actions">
-        ${isNew ? '' : '<button type="button" class="danger" data-del>削除</button><button type="button" data-to-cal>カレンダーへ</button>'}
+        ${isNew ? '' : '<button type="button" class="danger" data-del>削除</button><button type="button" data-copy>コピー</button><button type="button" data-to-cal>カレンダーへ</button>'}
         <span class="sp"></span><button class="primary">保存</button>
       </div>
     </form>`);
@@ -311,6 +326,11 @@ function openTodoForm(t, preset = {}) {
     if (!v) return;
     S.deleteTodo(t.id, v === 'skip');
     m.close();
+  });
+  $('[data-copy]', f)?.addEventListener('click', () => {
+    m.close();
+    openTodoForm(null, copyOf(t), { copied: true });
+    toast('コピーしました。期限などを変えて保存してください');
   });
   $('[data-to-cal]', f)?.addEventListener('click', () => {
     m.close();
