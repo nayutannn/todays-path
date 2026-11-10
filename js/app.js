@@ -67,7 +67,15 @@ function choose(message, choices) {
 }
 
 // 予定の色（タグで決まる）を CSS 変数 --c として渡す
-const cs = ev => `style="--c:${S.eventColor(ev)}"`;
+// 予定の色の CSS 変数。タグが複数なら色を均等に分ける（左から、タグの一覧の上にあるタグの色）
+//   --c: 最初の色 / --cg: 横に並べた色 / --cgt: その淡い色 / --cv: 縦に並べた色（細い線用）
+function colorVars(ev) {
+  const cs = S.eventColors(ev), n = cs.length;
+  const grad = (dir, f) => `linear-gradient(${dir}, ${cs.map((c, i) => `${f(c)} ${(i * 100 / n).toFixed(2)}% ${((i + 1) * 100 / n).toFixed(2)}%`).join(', ')})`;
+  const tint = c => `color-mix(in srgb, ${c} 15%, var(--surface))`;
+  return `--c:${cs[0]};--cg:${grad('90deg', c => c)};--cgt:${grad('90deg', tint)};--cv:${grad('180deg', c => c)}`;
+}
+const cs = ev => `style="${colorVars(ev)}"`;
 const tagChip = (name, on) => `<button type="button" class="tchip ${on ? 'on' : ''}" data-tag="${esc(name)}" style="--c:${S.tagColor(name) || S.DEFAULT_COLOR}">${esc(name)}</button>`;
 
 const timeSelect = (name, value) => `<select name="${name}">${U.TIMES.map(t =>
@@ -364,7 +372,7 @@ function timeline(p, now) {
     const o = g.o;
     const h = Math.max(20, y(g.e) - y(g.s) - 2);
     html += `<div class="tl-ev ${h < 30 ? 'short' : ''} ${p.conflicts.has(o.key) ? 'conflict' : ''}"
-      style="top:${y(g.s)}px;height:${h}px;--l:${g.lane};--n:${g.n};--c:${S.eventColor(o.ev)}" data-act="edit-event" data-id="${o.ev.id}" data-occ="${ymd(o.start)}">
+      style="top:${y(g.s)}px;height:${h}px;--l:${g.lane};--n:${g.n};${colorVars(o.ev)}" data-act="edit-event" data-id="${o.ev.id}" data-occ="${ymd(o.start)}">
       <b>${esc(o.ev.title)}</b>
       <small>${hm(o.start)}–${hm(o.end)}${o.ev.location ? ` @${esc(o.ev.location)}` : ''}</small>
       ${p.conflicts.has(o.key) ? '<span class="chip over">重複</span>' : ''}
@@ -508,7 +516,7 @@ function weeksHtml(first, n) {
     html += `<div class="bars" aria-hidden="true">${bars.filter(b => b.lane < shown).map(b => {
       const contL = b.o.start < ws, contR = lastDayOf(b.o) >= we;
       return `<div class="bar ${b.o.ev.allDay ? 'ad' : 'tm'} ${contL ? 'cl' : ''} ${contR ? 'cr' : ''}"
-        style="grid-column:${b.c0 + 1}/${b.c1 + 2};grid-row:${b.lane + 1};--c:${S.eventColor(b.o.ev)}">${b.o.ev.allDay ? '' : `<i>${hm(b.o.start)}</i>`}${esc(b.o.ev.title)}</div>`;
+        style="grid-column:${b.c0 + 1}/${b.c1 + 2};grid-row:${b.lane + 1};${colorVars(b.o.ev)}">${b.o.ev.allDay ? '' : `<i>${hm(b.o.start)}</i>`}${esc(b.o.ev.title)}</div>`;
     }).join('')}</div></div>`;
   }
   return html;

@@ -30,8 +30,13 @@ export const tagList = () => state.settings.tags || [];
 export const tagColor = name => tagList().find(t => t.name === name)?.color || null;
 // 予定の色 = 付いているタグのうち、色が決まっている最初のタグの色
 export function eventColor(ev) {
-  for (const t of ev.tags || []) { const c = tagColor(t); if (c) return c; }
-  return DEFAULT_COLOR;
+  return eventColors(ev)[0];
+}
+// 予定の色すべて（タグが複数なら分割して表示する）。並びはタグの一覧の順（選んだ順には関係しない）
+export function eventColors(ev) {
+  const on = new Set(ev.tags || []);
+  const cs = tagList().filter(t => on.has(t.name) && t.color).map(t => t.color);
+  return cs.length ? cs : [DEFAULT_COLOR];
 }
 // まだ登録されていないタグを登録する。色は colors[名前]（ユーザーが選んだ色）、無ければ使われていない色
 export function registerTags(names, colors = {}) {
