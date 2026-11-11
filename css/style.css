@@ -233,6 +233,9 @@ body[data-view="todo"] main > * { flex-shrink: 0; width: 100%; }
   background: var(--bg); border-top: 1px solid var(--line); box-shadow: -16px 0 var(--bg), 16px 0 var(--bg);
 }
 .quick input { flex: 1; }
+/* ToDo 画面下の「＋ やることを追加」（押すと追加画面が開く。見た目は入力欄） */
+.quick-open { flex: 1; justify-content: flex-start; color: var(--muted); padding: 9px 12px; border-radius: 9px; background: var(--surface); }
+.quick-open:active { transform: none; border-color: var(--accent); }
 .todos { list-style: none; margin: 0; padding: 0; }
 .todo { display: flex; align-items: flex-start; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; margin-bottom: 6px; }
 .todo .chk { margin-top: 1px; }
