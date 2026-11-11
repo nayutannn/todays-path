@@ -721,35 +721,98 @@ function renderTodo() {
     openTodoForm(null, title ? { title } : {});
   });
   if (manual) bindDrag($('#todoList'));
+  bindTabs($('nav.tabs'));
 }
 
-// ハンドルをつかんで並べ替え（マウス・タッチ共通）
+// ドラッグで並べ替え（マウス・指の共通）。
+//   handle あり: そのつまみを押した瞬間からドラッグ（todo の ⠿）
+//   handle なし: マウスは押して少し動かすと、指は長押しするとドラッグ（それまでは普通のタップ・スクロール）
+function dragSort(box, { item, handle = null, axis = 'y', hold = 350, onDrop }) {
+  let d = null, justDragged = false;
+  const off = () => {
+    clearTimeout(d?.timer);
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', end);
+    window.removeEventListener('pointercancel', end);
+  };
+  const start = () => { if (!d) return; d.started = true; d.el.classList.add('dragging'); navigator.vibrate?.(10); };
+  function cancel() { if (!d) return; d.el.classList.remove('dragging'); off(); d = null; }
+  function end() {
+    const x = d;
+    cancel();
+    if (!x?.started) return;
+    justDragged = true; setTimeout(() => { justDragged = false; }, 50);
+    if (x.moved) onDrop();
+  }
+  function move(e) {
+    if (!d) return;
+    if (!d.started) {
+      if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 8) return;
+      if (d.touch) return cancel();          // 長押しの前に指が動いた＝スクロールしたい
+      start();
+    }
+    // 端に近づいたら自動でスクロール（長いリストの下・横に隠れたタブへ運べるように）
+    const sc = axis === 'x' ? box : box.closest('main'), sr = sc?.getBoundingClientRect();
+    if (sr) {
+      const p = axis === 'x' ? e.clientX : e.clientY, lo = axis === 'x' ? sr.left : sr.top, hi = axis === 'x' ? sr.right : sr.bottom;
+      const step = p < lo + 50 ? -14 : p > hi - (axis === 'x' ? 50 : 110) ? 14 : 0;
+      if (step) axis === 'x' ? (sc.scrollLeft += step) : (sc.scrollTop += step);
+    }
+    const over = document.elementFromPoint(e.clientX, e.clientY)?.closest(item);
+    if (!over || over === d.el || over.parentNode !== d.el.parentNode) return;
+    const r = over.getBoundingClientRect();
+    const before = axis === 'x' ? e.clientX < r.left + r.width / 2 : e.clientY < r.top + r.height / 2;
+    if (before) { if (over.previousElementSibling !== d.el) over.before(d.el); }
+    else if (over.nextElementSibling !== d.el) over.after(d.el);
+    d.moved = true;
+  }
+  box.addEventListener('pointerdown', e => {
+    if (e.button > 0) return;
+    const grab = e.target.closest(handle || item);
+    const el = grab?.closest(item);
+    if (!el || !box.contains(el)) return;
+    d = { el, sx: e.clientX, sy: e.clientY, started: false, moved: false, touch: e.pointerType !== 'mouse' };
+    if (handle) { e.preventDefault(); start(); }
+    else if (d.touch) d.timer = setTimeout(start, hold);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    // 指の操作をブラウザが途中で取り上げたときも、そこまで動かした並びは残す
+    window.addEventListener('pointercancel', end);
+  });
+  // ドラッグ中は画面がスクロールしないように（iPhone は touchmove を止める必要がある）
+  box.addEventListener('touchmove', e => { if (d?.started) e.preventDefault(); }, { passive: false });
+  box.addEventListener('contextmenu', e => { if (d) e.preventDefault(); });
+  // ドラッグを終えた直後のクリック（タブの切り替えなど）は無視する
+  box.addEventListener('click', e => { if (justDragged) { e.stopPropagation(); e.preventDefault(); } }, true);
+}
+
 function bindDrag(ul) {
-  ul.addEventListener('pointerdown', e => {
-    const handle = e.target.closest('.handle');
-    if (!handle) return;
-    e.preventDefault();
-    const li = handle.closest('li');
-    li.classList.add('dragging');
-    handle.setPointerCapture(e.pointerId);
-    const move = ev => {
-      const over = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('li.todo');
-      if (!over || over === li || over.parentNode !== ul) return;
-      const r = over.getBoundingClientRect();
-      ev.clientY < r.top + r.height / 2 ? over.before(li) : over.after(li);
-    };
-    const up = () => {
-      handle.removeEventListener('pointermove', move);
-      li.classList.remove('dragging');
+  dragSort(ul, {
+    item: 'li.todo', handle: '.handle',
+    onDrop() {
       const ids = $$('li.todo', ul).map(x => x.dataset.id);
       // 他タブの項目と順番が混ざらないよう、表示中の項目が持っていた order 値を並べ直して割り当てる
-      const orders = ids.map(id => state.todos.find(t => t.id === id).order ?? 0).sort((a, b) => a - b);
-      ids.forEach((id, i) => { state.todos.find(t => t.id === id).order = orders[i] + i * 1e-6; });
+      const orders = ids.map(id => state.todos.find(t => t.id === id)?.order ?? 0).sort((a, b) => a - b);
+      ids.forEach((id, i) => { const t = state.todos.find(x => x.id === id); if (t) t.order = orders[i] + i * 1e-6; });
       S.save();
-    };
-    handle.addEventListener('pointermove', move);
-    handle.addEventListener('pointerup', up, { once: true });
-    handle.addEventListener('pointercancel', up, { once: true });
+    },
+  });
+}
+
+// ToDo のタブ: ホイールで横にスクロール、ドラッグで並べ替え
+function bindTabs(nav) {
+  nav.addEventListener('wheel', e => {
+    if (nav.scrollWidth <= nav.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    e.preventDefault();
+    nav.scrollLeft += e.deltaY;
+  }, { passive: false });
+  dragSort(nav, {
+    item: 'button[data-act="tab"]:not([data-id="all"])', axis: 'x',
+    onDrop() {
+      const ids = $$('button[data-act="tab"]', nav).map(b => b.dataset.id).filter(id => id !== 'all');
+      state.tabs.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+      S.save();
+    },
   });
 }
 
@@ -1248,6 +1311,7 @@ Sync.onStatus(() => {
   // 入力中のログインフォームは消さない
   if (view === 'settings' && !document.activeElement?.closest('#authForm')) renderSettings();
 });
+if (S.healTags()) S.save();   // タグ一覧から抜けたタグを戻す
 Sync.initSync();
 Backup.initBackup();
 Push.initPush().then(() => view === 'settings' && renderSettings());

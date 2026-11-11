@@ -1,7 +1,7 @@
 // Supabase との同期。端末内のデータを正として表示し、変わった項目だけを送受信する。
 // 1 件 = items テーブルの 1 行（kind + id）。削除は deleted=true で残し、他の端末にも消したことを伝える。
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
-import { state, save, subscribe } from './store.js';
+import { state, save, subscribe, healTags } from './store.js';
 
 const LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 const SNAP_KEY = 'todays-path-sync';
@@ -78,10 +78,13 @@ function applyRemote(rows) {
     snap.lastPull = latest || snap.lastPull;
   }
   storeSnap();
+  // 届いた設定のタグ一覧に、予定で使っているタグが抜けていたら戻す（戻した分は次の同期で送られる）
+  if (healTags()) changed = true;
   if (changed) save();
 }
 
 async function push() {
+  if (healTags()) save();   // タグ一覧が欠けたまま送らない
   const local = localRecords();
   const now = new Date().toISOString();
   const rows = [];

@@ -50,6 +50,20 @@ export function registerTags(names, colors = {}) {
   }
   return added;
 }
+// 予定に使われているのに一覧に無いタグを一覧に戻す（別の端末の古い設定で一覧が上書きされたときの修復）。
+// 色は、よく使う名前は最初に決めていた色、ほかはまだ使われていない色
+const USUAL_COLORS = { 学校: '#3b6fd4', 試験: '#d64545', 行事: '#8a5cd1', バイト: '#e8833a' };
+export function healTags() {
+  const list = state.settings.tags ||= [];
+  const used = [...new Set(state.events.flatMap(e => e.tags || []))].filter(n => n && !list.some(t => t.name === n));
+  if (!used.length) return false;
+  for (const name of used) {
+    const taken = new Set(list.map(t => t.color));
+    const want = USUAL_COLORS[name];
+    list.push({ name, color: want && !taken.has(want) ? want : (PALETTE.find(([c]) => !taken.has(c)) || PALETTE[17])[0] });
+  }
+  return true;
+}
 // 予定に使われているのに登録されていないタグ（タグの編集画面に出す）
 export const unregisteredTags = () => [...new Set(state.events.flatMap(e => e.tags || []))].filter(n => !tagColor(n));
 export function renameTag(from, to) {
@@ -96,8 +110,9 @@ function migrate(s) {
   if (!s.tabs.length) s.tabs = f.tabs;
   s.settings = { ...DEFAULT_SETTINGS, ...s.settings };
   s.meta = { ...f.meta, ...s.meta };
-  // 以前の「色」を、タグの色に引き継ぐ
-  if (!s.settings.tags) {
+  // 以前の「色」を、タグの色に引き継ぐ（予定が 1 件も無い端末では作らない。
+  // 作ると「バイト」だけの一覧が同期で他の端末のタグ一覧を上書きしてしまうため）
+  if (!s.settings.tags && s.events.length) {
     const tags = [{ name: s.settings.workTag || 'バイト', color: '#e8833a' }];
     for (const ev of s.events) for (const name of ev.tags || [])
       if (!tags.some(t => t.name === name)) tags.push({ name, color: OLD_COLORS[ev.color] || DEFAULT_COLOR });

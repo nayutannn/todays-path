@@ -222,6 +222,8 @@ h1 { font-size: 24px; margin: 0; letter-spacing: .01em; }
 .tabs button { border-radius: 18px; padding: 5px 13px; font-size: 13.5px; }
 .tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .tabs button small { opacity: .7; }
+.tabs button { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.tabs button.dragging { outline: 2px solid var(--accent); outline-offset: 1px; box-shadow: 0 4px 12px rgba(0,0,0,.2); }
 .quick { display: flex; gap: 8px; margin-bottom: 10px; }
 /* ToDo 画面: 追加の欄はいつも画面の下（ナビのすぐ上）に出す */
 body[data-view="todo"] main { display: flex; flex-direction: column; padding-bottom: 0; }
@@ -239,7 +241,7 @@ body[data-view="todo"] main > * { flex-shrink: 0; width: 100%; }
 .todo.done .t { text-decoration: line-through; color: var(--muted); }
 .todo.waiting { opacity: .7; }
 .todo.dragging { box-shadow: 0 8px 20px rgba(0,0,0,.18); border-color: var(--accent); position: relative; z-index: 2; }
-.handle { cursor: grab; touch-action: none; color: var(--muted); padding: 0 4px; font-size: 18px; user-select: none; }
+.handle { cursor: grab; touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; color: var(--muted); padding: 0 4px; font-size: 18px; user-select: none; }
 .p3 { border-left: 3px solid var(--danger); } .p2 { border-left: 3px solid var(--warn); } .p1 { border-left: 3px solid var(--sat); }
 .plist .p1, .plist .p2, .plist .p3 { border-left: none; }
 .fold { margin-top: 14px; }
