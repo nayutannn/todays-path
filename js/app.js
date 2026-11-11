@@ -702,7 +702,7 @@ function renderTodo() {
     ${done.length ? `<details class="fold" ${showDone ? 'open' : ''} id="doneFold"><summary>完了（${done.length}）</summary>
       <ul class="todos">${done.slice(0, 100).map(t => todoRow(t)).join('')}</ul>
       <button class="link danger" data-act="clear-done">完了済みを削除</button></details>` : ''}
-    <form id="quickAdd" class="quick"><input name="q" placeholder="＋ やることを入力して Enter" autocomplete="off" enterkeyhint="done"><button class="primary">追加</button></form>`;
+    <form id="quickAdd" class="quick"><input name="q" placeholder="＋ やることを入力して Enter" autocomplete="off" enterkeyhint="done"><button type="button" data-detail title="期限・やる日・通知なども決めて追加">詳細</button><button class="primary">追加</button></form>`;
 
   $('#todoSort').addEventListener('change', e => { state.settings.todoSort = e.target.value; S.save(); });
   $('#doneFold')?.addEventListener('toggle', e => { showDone = e.target.open; });
@@ -713,6 +713,12 @@ function renderTodo() {
     // 入力欄がリストの下にあるので、新しい todo も手動の並びでは一番下に入れる
     S.upsertTodo({ title, tabId: todoTab === 'all' ? state.tabs[0].id : todoTab, order: Math.max(0, ...state.todos.map(x => x.order ?? 0)) + 1 });
     $('#quickAdd input').focus();
+  });
+  // 「詳細」: 入力中の名前を引き継いで、期限・やる日・通知なども設定できる追加画面を開く
+  $('#quickAdd [data-detail]').addEventListener('click', () => {
+    const inp = $('#quickAdd input'), title = inp.value.trim();
+    inp.value = '';
+    openTodoForm(null, title ? { title } : {});
   });
   if (manual) bindDrag($('#todoList'));
 }
