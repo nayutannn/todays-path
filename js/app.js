@@ -4,6 +4,7 @@ import * as Sync from './sync.js';
 import * as Push from './push.js';
 import './claude.js';
 import * as Backup from './backup.js';
+import * as Notes from './notes.js';
 import { holidayName } from './holidays.js';
 
 const { state } = S;
@@ -120,6 +121,16 @@ function srcHtml(x) {
   return parts.length ? `<div class="srcbox">${parts.join('<hr>')}</div>` : '';
 }
 
+// この予定・todo について Claude が調べたメモ（調査メモ）
+function notesBox(id) {
+  const list = id ? Notes.forItem(id) : [];
+  if (!list.length) return '';
+  return `<div class="notesbox"><b>調査メモ</b>${list.map(n => `<button type="button" class="note-link" data-act="note" data-id="${esc(n.id)}">
+    <span class="t">${esc(n.title)}</span>${statusChip(n.status)}<small>${esc(n.summary || '')}</small></button>`).join('')}</div>`;
+}
+const STATUS_CLS = { 調査中: 'wk', 検証中: 'dodate', 完了: '', 要確認: 'soon' };
+const statusChip = s => s ? `<span class="chip ${STATUS_CLS[s] ?? ''}">${esc(s)}</span>` : '';
+
 // コピー: 既にある予定・todo の内容だけを取り出す（id・作成日時・情報元・完了・削除した回などは引き継がない）
 const COPY_SKIP = ['id', 'createdAt', 'updatedAt', 'source', 'sourceNote', 'changeSource', 'changeNote', 'claudeNew',
   'exdates', 'deleted', 'done', 'doneAt', 'order', 'hiddenUntil'];
@@ -145,7 +156,7 @@ function openEventForm(ev, { date, occDate, copy } = {}) {
   const m = modal(`
     <form class="form">
       <div class="mhead"><h2>${copy ? '予定をコピーして追加' : isNew ? '予定を追加' : '予定を編集'}</h2><button type="button" class="icon" data-close>×</button></div>
-      ${srcHtml(ev)}
+      ${srcHtml(ev)}${isNew ? '' : notesBox(ev.id)}
       <input name="title" class="title-in" placeholder="タイトル" value="${esc(ev.title)}" required autocomplete="off">
       <label class="check"><input type="checkbox" name="allDay" ${ev.allDay ? 'checked' : ''}> 終日</label>
       <div class="row"><label>開始</label><span class="inline"><input type="date" name="sd" value="${sd}" required><span class="tm">${timeSelect('st', st)}</span></span></div>
@@ -270,7 +281,7 @@ function openTodoForm(t, preset = {}, { copied = false } = {}) {
   const m = modal(`
     <form class="form">
       <div class="mhead"><h2>${copied ? 'todoをコピーして追加' : isNew ? 'todoを追加' : 'todoを編集'}</h2><button type="button" class="icon" data-close>×</button></div>
-      ${srcHtml(t)}
+      ${srcHtml(t)}${isNew ? '' : notesBox(t.id)}
       <input name="title" class="title-in" placeholder="やること" value="${esc(t.title)}" required autocomplete="off">
       <div class="row"><label>リスト</label><select name="tabId">${options(state.tabs.map(x => [x.id, esc(x.name)]), t.tabId)}</select></div>
       <div class="row"><label>優先度</label><div class="seg prio">${PRIORITY.map((p, i) =>
@@ -669,6 +680,7 @@ function todoRow(t, { drag } = {}) {
   if (t.longLead) meta.push('<span class="chip long">長期</span>');
   if (t.reminders?.length) meta.push('<span class="chip">🔔</span>');
   if (t.memo) meta.push('<span class="chip">メモ</span>');
+  if (Notes.forItem(t.id).length) meta.push(`<span class="chip note">調査 ${Notes.forItem(t.id).length}</span>`);
   if (todoTab === 'all') meta.push(`<span class="chip tabname">${esc(state.tabs.find(x => x.id === t.tabId)?.name || '')}</span>`);
   return `<li class="todo p${t.priority || 0} ${t.done ? 'done' : ''}" data-id="${t.id}">
     <button class="chk" data-act="${t.done ? 'undone' : 'done'}" data-id="${t.id}" aria-label="完了"></button>
@@ -846,6 +858,58 @@ function openTabsEditor() {
 
 /* ================= 給料 ================= */
 let payMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+/* ================= 調査メモ（Claude が調べた結果・仮説検証。読むだけ） ================= */
+let notesQuery = '';
+let notesKw = '';
+function itemName(l) {
+  if (l.kind === 'todo') { const t = state.todos.find(x => x.id === l.id); return t ? `todo「${t.title}」` : ''; }
+  const ev = state.events.find(x => x.id === l.id); return ev ? `予定「${ev.title}」` : '';
+}
+function renderNotes() {
+  Notes.refresh();
+  const q = notesQuery.trim().toLowerCase();
+  const all = Notes.all();
+  const kwCount = {};
+  all.forEach(n => (n.keywords || []).forEach(k => { kwCount[k] = (kwCount[k] || 0) + 1; }));
+  const kws = Object.keys(kwCount).sort((a, b) => kwCount[b] - kwCount[a] || a.localeCompare(b, 'ja')).slice(0, 40);
+  const hit = n => (!notesKw || (n.keywords || []).includes(notesKw)) &&
+    (!q || [n.title, n.summary, n.status, ...(n.keywords || []), ...(n.links || []).map(itemName)].join(' ').toLowerCase().includes(q));
+  const order = { 要確認: 0, 検証中: 1, 調査中: 2, 完了: 3 };
+  const list = all.filter(hit).sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9) || (b.updated || '').localeCompare(a.updated || ''));
+  $('#view').innerHTML = `
+    <header class="vh"><h1>調査メモ</h1><button class="small" data-act="notes-reload">更新</button></header>
+    <p class="muted notes-lead">Claude が予定・todo について調べた結果と、仮説の検証の記録です。</p>
+    <input id="notesSearch" class="search" type="search" placeholder="メモを検索（題名・キーワード・要約）" value="${esc(notesQuery)}" autocomplete="off">
+    ${kws.length ? `<div class="kwbar">${kws.map(k => `<button class="kw ${k === notesKw ? 'on' : ''}" data-act="note-kw" data-v="${esc(k)}">${esc(k)}</button>`).join('')}</div>` : ''}
+    ${Notes.error ? `<p class="empty">${esc(Notes.error)}</p>` : ''}
+    <ul class="notes">${list.map(n => `<li data-act="note" data-id="${esc(n.id)}">
+      <div class="nt"><span class="t">${esc(n.title)}</span>${statusChip(n.status)}</div>
+      ${n.summary ? `<div class="sum">${esc(n.summary)}</div>` : ''}
+      <div class="meta">${(n.links || []).map(itemName).filter(Boolean).map(x => `<span class="chip">${esc(x)}</span>`).join('')}
+        <span class="chip">${esc(n.updated || '')}</span></div></li>`).join('') ||
+      `<p class="empty">${all.length ? '見つかりませんでした' : Sync.currentUser() ? 'まだメモはありません' : 'ログインすると読めます'}</p>`}</ul>`;
+  const box = $('#notesSearch');
+  box.addEventListener('input', () => {
+    notesQuery = box.value;
+    const pos = box.selectionStart;
+    renderNotes();
+    const nb = $('#notesSearch'); nb.focus(); nb.setSelectionRange(pos, pos);
+  });
+}
+async function openNote(id) {
+  const n = Notes.get(id);
+  if (!n) return toast('メモが見つかりません');
+  const m = modal(`<div class="mhead"><h2>${esc(n.title)}</h2><button type="button" class="icon" data-close>×</button></div>
+    <div class="note-head">${statusChip(n.status)}<span class="muted">更新 ${esc(n.updated || '')}</span></div>
+    ${(n.links || []).length ? `<div class="note-links">${n.links.map(l => itemName(l)
+      ? `<button type="button" class="chip" data-act="${l.kind === 'todo' ? 'edit-todo' : 'edit-event'}" data-id="${esc(l.id)}">${esc(itemName(l))}</button>` : '').join('')}</div>` : ''}
+    ${(n.keywords || []).length ? `<div class="kwbar">${n.keywords.map(k => `<span class="kw">${esc(k)}</span>`).join('')}</div>` : ''}
+    <div class="mdbody"><p class="muted">読み込み中…</p></div>`);
+  m.el.classList.add('wide');
+  try { $('.mdbody', m.el).innerHTML = Notes.md(await Notes.body(id)); }
+  catch (e) { $('.mdbody', m.el).innerHTML = `<p class="empty">読み込めませんでした（${esc(e.message || String(e))}）</p>`; }
+}
+
 function renderPay() {
   const from = payMonth, to = U.addMonths(payMonth, 1);
   const r = S.payInRange(from, to);
@@ -1162,7 +1226,7 @@ function tick() {
 }
 
 /* ================= ルーティングと操作 ================= */
-const VIEWS = { path: renderPath, cal: renderCal, todo: renderTodo, pay: renderPay, settings: renderSettings };
+const VIEWS = { path: renderPath, cal: renderCal, todo: renderTodo, notes: renderNotes, pay: renderPay, settings: renderSettings };
 
 function render() {
   if (!VIEWS[view]) view = 'path';
@@ -1222,6 +1286,9 @@ document.addEventListener('click', async e => {
     case 'cal-today': calQuery = ''; $('#calSearch').value = ''; renderSearch(); scrollToDay(ymd(new Date())); break;
     case 'search-hit': scrollToDay(day); openEventForm(structuredClone(state.events.find(x => x.id === id)), { occDate: day }); break;
     case 'tab': todoTab = id; renderTodo(); break;
+    case 'note': openNote(id); break;
+    case 'note-kw': notesKw = notesKw === v ? '' : v; renderNotes(); break;
+    case 'notes-reload': Notes.refresh(true).then(() => { renderNotes(); toast(Notes.error || 'メモを読み込みました'); }); break;
     case 'tabs-edit': openTabsEditor(); break;
     case 'clear-done': {
       const ok = await choose('完了済みのtodoを削除しますか？', [['y', '削除', 'danger']]);
@@ -1293,12 +1360,14 @@ document.addEventListener('keydown', e => {
   if (e.target.closest('input, textarea, select') || $('.modal') || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === 'n') { e.preventDefault(); view === 'cal' ? openEventForm(null) : openTodoForm(null); }
   if (e.key === '/' && view === 'cal') { e.preventDefault(); $('#calSearch').focus(); }
-  const keys = { 1: 'path', 2: 'cal', 3: 'todo', 4: 'pay', 5: 'settings' };
+  const keys = { 1: 'path', 2: 'cal', 3: 'todo', 4: 'notes', 5: 'pay', 6: 'settings' };
   if (keys[e.key]) go(keys[e.key]);
 });
 
 S.subscribe(render);
+Notes.onChange(() => { if (view === 'notes' || view === 'todo') render(); });
 Sync.onStatus(() => {
+  if (Sync.status.state === 'ok') Notes.refresh();
   // 入力中のログインフォームは消さない
   if (view === 'settings' && !document.activeElement?.closest('#authForm')) renderSettings();
 });

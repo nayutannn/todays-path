@@ -381,3 +381,37 @@ body[data-view="todo"] main > * { flex-shrink: 0; width: 100%; }
 .backups li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; }
 .backups li:first-child { border-top: 0; }
 .backups small { color: var(--muted); flex: 1; }
+
+/* ---------- 調査メモ ---------- */
+.notes-lead { font-size: 13px; margin: -4px 0 10px; }
+input.search { width: 100%; margin-bottom: 8px; }
+.kwbar { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 10px; }
+.kw { font-size: 12px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
+.kw.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+ul.notes { list-style: none; margin: 0; padding: 0; }
+ul.notes li { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 7px; cursor: pointer; }
+ul.notes .nt { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; }
+ul.notes .t { font-weight: 600; }
+ul.notes .sum { font-size: 13.5px; color: var(--muted); margin: 3px 0 4px; line-height: 1.5; }
+ul.notes .meta, .note-links { display: flex; flex-wrap: wrap; gap: 4px; }
+.note-head { display: flex; gap: 8px; align-items: center; font-size: 13px; margin: -4px 0 8px; }
+.note-links { margin-bottom: 8px; }
+.note-links .chip { border: none; cursor: pointer; }
+.chip.note { background: #fbeedd; color: #a3591b; }
+.notesbox { font-size: 13px; background: var(--surface-2); border-radius: 8px; padding: 8px 10px; margin: 0 0 10px; }
+.notesbox > b { display: block; margin-bottom: 4px; font-weight: 600; }
+.note-link { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; width: 100%; text-align: left; border: none; border-top: 1px solid var(--line); background: none; padding: 6px 0; border-radius: 0; color: var(--text); }
+.note-link small { flex-basis: 100%; color: var(--muted); }
+.modal.wide { max-width: 760px; }
+.mdbody { font-size: 14.5px; line-height: 1.7; overflow-wrap: anywhere; }
+.mdbody h3 { font-size: 17px; margin: 18px 0 6px; } .mdbody h4 { font-size: 15.5px; margin: 14px 0 4px; } .mdbody h5, .mdbody h6 { font-size: 14.5px; margin: 12px 0 4px; }
+.mdbody p { margin: 6px 0; } .mdbody ul, .mdbody ol { margin: 6px 0; padding-left: 22px; } .mdbody li.deep { margin-left: 18px; }
+.mdbody pre { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; overflow-x: auto; font-size: 12.5px; line-height: 1.5; }
+.mdbody code { font-size: .92em; background: var(--surface-2); border-radius: 4px; padding: 0 3px; } .mdbody pre code { background: none; padding: 0; }
+.mdbody blockquote { margin: 6px 0; padding: 2px 10px; border-left: 3px solid var(--line); color: var(--muted); }
+.mdbody a { color: var(--accent); }
+.tblwrap { overflow-x: auto; margin: 8px 0; }
+.mdbody table { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+.mdbody th, .mdbody td { border: 1px solid var(--line); padding: 4px 7px; text-align: left; vertical-align: top; }
+.mdbody th { background: var(--surface-2); }
+@media (prefers-color-scheme: dark) { .chip.note { background: #3d2c1b; color: #f0b27a; } }

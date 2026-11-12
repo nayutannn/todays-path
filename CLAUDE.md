@@ -77,6 +77,11 @@ PC のスケジュール実行（Claude アプリの「TodaysPath メールとTe
    - 既にある項目との違いは「共通のルール」の通り
 6. 終わったら `python -X utf8 tools/mail_fetch.py --done`。最後に、追加した・確認待ちに入れた・飛ばした（理由）ものを短く報告する
 
+## 調査メモ（Claude が調べた結果・仮説検証）
+- 本体は PC の `C:/Users/Osaka/research-notes`（非公開。git で履歴あり）。手順はそこの `CLAUDE.md`、一覧は `INDEX.md`、探すときは `python -X utf8 C:/Users/Osaka/research-notes/tools/notes.py search 語`
+- クラウドの写しは Supabase の `notes` 表（`supabase/notes.sql`。items とは別。書き込みは `put_notes` だけ）。アプリの「調査」画面と、紐づいた todo・予定の編集画面で読める（読むだけ）
+- 定期実行「TodaysPath 調査」が 5 時間の使用量の枠の終わり近くに動く。メール確認の実行の最後に、その予約をする
+
 ## 開発メモ
 - ビルドなしの ES modules。ローカル確認は `python -m http.server 8765`（`.claude/launch.json` の `todays-path`）
 - PC 上の本体は `C:/Users/Osaka/todays-path`、週1の自動バックアップは同じフォルダの `backup/`（`tools/backup_pc.py` が保存。個人データなので .gitignore 済み）（タスク スケジューラ「TodaysPath 週1バックアップ」、日曜21時）。OneDrive は使わない
