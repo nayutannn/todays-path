@@ -58,6 +58,10 @@ PC のスケジュール実行（Claude アプリの「TodaysPath メールとTe
 2. **iCloud メール**: `python -X utf8 tools/mail_fetch.py` を実行 → `mail-data/new/*/message.md` を読む。添付は `attachments/`（PDF・画像は Read で、Word/Excel/PowerPoint は同じ名前の `.txt`）
    - 読まないもの: 「宣伝の可能性: あり」で中身も広告・メルマガ・セールのもの、ログイン通知・レシートなど予定やタスクにならないもの
    - 送信済みメールも読む（自分が約束した日時・引き受けた作業が書かれていることがある）
+   **サインイン画面（パスキー画面）を出したままにしない**: Microsoft のサインイン画面（URL が `login.microsoftonline.com` / `login.microsoft.com` / `login.live.com`）を開いたままにすると、Windows の「パスキーでサインイン」画面が何度も出て本人の邪魔になる。そのため次の 3 つを守る。
+   - Outlook・Teams を開いたら、待つのは 1 回（数秒）だけにする。URL がサインイン画面のままなら、その場ですぐそのタブを `tabs_close` で閉じる（`about:blank` へは移動できない）。サインイン画面では何もクリックしない（パスキー・アカウント選択・キャンセルも押さない）
+   - Outlook と Teams は同じ学校アカウントなので、片方がサインイン画面になったら、もう片方は開かずに飛ばす（報告には両方「本人のサインインが必要」と書く）
+   - 確認が終わったら、成功しても失敗しても、使ったタブを必ず `tabs_close` で閉じる（Outlook や Teams を開いたままにしない。次回は `preview_start` の `url` で開き直す）
 3. **Teams**: 内蔵ブラウザ（`mcp__Claude_Browser__*`）で https://teams.microsoft.com/v2/ を開き、左の「アクティビティ」を読む。前回の確認時刻は `mail-data/teams-state.json`（`{"last": "ISO時刻"}`）。それより新しい通知を開いて本文を読み、添付ファイル（Word・PDF・Excel など）も開いて中身を確認する
    - ログイン画面が出たら Teams は飛ばし、結果の報告に「Teams にログインが必要」と書く（パスワードは入力しない）
    - 読み終えたら `teams-state.json` の `last` を今の時刻にする
